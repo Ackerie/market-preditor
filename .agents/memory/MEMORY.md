@@ -1,0 +1,9 @@
+- [replit-auth-web lib setup](replit-auth-web-lib.md) — shared auth hook lib needs composite+emitDeclarationOnly tsconfig; never use import.meta.env inside a lib
+- [codegen + api-zod barrel](codegen-barrel.md) — after orval codegen, rewrite api-zod/src/index.ts to export `./generated/api` AND `./types` (AuthUser lives in hand-written types.ts)
+- [deposit route pattern](deposit-route.md) — deposit uses raw SQL `UPDATE portfolio SET usd_balance = usd_balance + $amount`; do NOT use db.$count or update+select chains
+- [Broker credential encryption](broker-credentials.md) — per-user Alpaca keys are AES-256-GCM encrypted at rest with a SESSION_SECRET-derived key; never store or return raw secrets.
+- [Resend via connectors SDK](resend-connector-sdk.md) — new connections don't expose raw keys; use @replit/connectors-sdk `.proxy()`; onboarding@resend.dev only delivers to Resend account owner
+- [Ensemble trading safety](ensemble-trading-safety.md) — buys need ≥2-model quorum; protective sells relaxed per-user (bot-held only, never global); lazy-import AI SDKs so missing env vars skip a vote
+- [Broker plug-in framework](broker-plugin-framework.md) — import registry via brokers/index only (adapters register there); adapter IDs ≤10 chars; OpenAPI broker fields are plain strings
+- [Broker rejection hardening](broker-rejection-hardening.md) — pre-check precision/wash-trade/min-notional and skip with a reason code instead of submitting doomed orders
+- [Real-money spend limits](real-money-limits.md) — real-order budget must be reserved via guarded atomic SQL UPDATE before calling Alpaca, refunded on rejection; run endpoints must be auth-gated + cycle-locked.

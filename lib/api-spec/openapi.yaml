@@ -1,0 +1,1964 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: AI Crypto Trader API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: coins
+    description: Crypto coin data
+  - name: portfolio
+    description: Portfolio management
+  - name: trades
+    description: Trade execution and history
+  - name: predictions
+    description: AI market predictions
+  - name: market
+    description: Market overview
+  - name: watchlist
+    description: User watchlist
+  - name: auto-trade
+    description: Automated AI-driven trading
+  - name: Auth
+    description: Browser and mobile authentication endpoints.
+  - name: account
+    description: User account and profile
+  - name: broker
+    description: Real-money trading via linked Alpaca and OANDA accounts
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /coins:
+    get:
+      operationId: listCoins
+      tags: [coins]
+      summary: List all supported assets with live prices
+      parameters:
+        - name: assetType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [crypto, stock, forex, futures, commodity]
+      responses:
+        "200":
+          description: List of assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Coin"
+
+  /coins/{symbol}:
+    get:
+      operationId: getCoin
+      tags: [coins]
+      summary: Get coin details and price history
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Coin detail with price history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoinDetail"
+        "404":
+          description: Coin not found
+
+  /portfolio:
+    get:
+      operationId: getPortfolio
+      tags: [portfolio]
+      summary: Get combined real portfolio across linked broker accounts
+      responses:
+        "200":
+          description: Portfolio data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Portfolio"
+        "401":
+          description: Unauthorized
+
+  /trades:
+    get:
+      operationId: listTrades
+      tags: [trades]
+      summary: Get real order history across linked broker accounts
+      responses:
+        "200":
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+        "401":
+          description: Unauthorized
+    post:
+      operationId: placeTrade
+      tags: [trades]
+      summary: Place a real-money market order, routed to the right broker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TradeInput"
+      responses:
+        "201":
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trade"
+        "400":
+          description: Invalid order or broker error
+        "401":
+          description: Unauthorized
+
+  /predictions/{symbol}:
+    get:
+      operationId: getPrediction
+      tags: [predictions]
+      summary: Get AI prediction for a coin
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AI prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prediction"
+        "404":
+          description: Coin not found
+
+  /market-summary:
+    get:
+      operationId: getMarketSummary
+      tags: [market]
+      summary: Get market overview and portfolio summary
+      responses:
+        "200":
+          description: Market summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketSummary"
+
+  /watchlist:
+    get:
+      operationId: listWatchlist
+      tags: [watchlist]
+      summary: Get user watchlist
+      responses:
+        "200":
+          description: Watchlist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WatchlistItem"
+    post:
+      operationId: addToWatchlist
+      tags: [watchlist]
+      summary: Add a coin to watchlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchlistInput"
+      responses:
+        "201":
+          description: Added to watchlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchlistItem"
+
+  /watchlist/{symbol}:
+    delete:
+      operationId: removeFromWatchlist
+      tags: [watchlist]
+      summary: Remove a coin from watchlist
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+
+  /auto-trade/settings:
+    get:
+      operationId: getAutoTradeSettings
+      tags: [auto-trade]
+      summary: Get auto-trade settings
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoTradeSettings"
+    put:
+      operationId: updateAutoTradeSettings
+      tags: [auto-trade]
+      summary: Update auto-trade settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoTradeSettingsInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoTradeSettings"
+
+  /auto-trade/run:
+    post:
+      operationId: runAutoTrade
+      tags: [auto-trade]
+      summary: Manually trigger one auto-trade cycle
+      responses:
+        "200":
+          description: Results of the auto-trade run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoTradeRunResult"
+
+  /auto-trade/run-status:
+    get:
+      operationId: getAutoTradeRunStatus
+      tags: [auto-trade]
+      summary: Check whether a trading cycle is currently running
+      responses:
+        "200":
+          description: Current run status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoTradeRunStatus"
+
+  /auto-trade/log:
+    get:
+      operationId: listAutoTradeLog
+      tags: [auto-trade]
+      summary: Get auto-trade decision log
+      responses:
+        "200":
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutoTradeLogEntry"
+
+  /auto-trade/events:
+    get:
+      operationId: listAutoTradeEvents
+      tags: [auto-trade]
+      summary: Get the current user's real-money auto-trade activity feed
+      responses:
+        "200":
+          description: Activity events for the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutoTradeEvent"
+
+  /auto-trade/pnl:
+    get:
+      operationId: getAutoTradePnl
+      tags: [auto-trade]
+      summary: Get the current user's auto-trade profit & loss summary (last 30 days of bot activity)
+      parameters:
+        - name: strategy
+          in: query
+          required: false
+          description: Filter to trades placed by one bot mode
+          schema:
+            type: string
+            enum: [longterm, daytrade]
+      responses:
+        "200":
+          description: Profit & loss summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoTradePnl"
+
+  /auto-trade/candles/{symbol}:
+    get:
+      operationId: getAutoTradeCandles
+      tags: [auto-trade]
+      summary: Get the intraday candlestick series the day-trade bot analyzes for an instrument
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Candle series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CandleSeries"
+        "404":
+          description: Unknown symbol
+
+  /auto-trade/alerts:
+    get:
+      operationId: getAutoTradeAlerts
+      tags: [auto-trade]
+      summary: Get alert status (daily caps reached, recent broker rejections) for the current user
+      responses:
+        "200":
+          description: Alert status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoTradeAlerts"
+
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the currently authenticated user
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+      responses:
+        "200":
+          description: Auth status resolved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserEnvelope"
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: registerAuthUser
+      summary: Create an email/password account and session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthCredentials"
+      responses:
+        "201":
+          description: Account created and session established.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserEnvelope"
+        "400":
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Email already registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: loginAuthUser
+      summary: Authenticate an email/password account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthCredentials"
+      responses:
+        "200":
+          description: Session established.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserEnvelope"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Invalid email or password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutAuthUser
+      summary: End the current application session
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+      responses:
+        "200":
+          description: Session ended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutSuccess"
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordReset
+      summary: Request a password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Generic response that does not reveal whether the email exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password, confirmPassword]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+                confirmPassword:
+                  type: string
+      responses:
+        "200":
+          description: Password reset successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid or expired token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: End the current application session and redirect to login
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+      responses:
+        "302":
+          description: Session ended and redirected to login.
+
+  /account/profile:
+    get:
+      tags: [account]
+      operationId: getAccountProfile
+      summary: Get the current user's profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthorized
+    put:
+      tags: [account]
+      operationId: updateAccountProfile
+      summary: Update the current user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileInput"
+      responses:
+        "200":
+          description: Updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+
+  /account/notifications:
+    get:
+      tags: [account]
+      operationId: getNotificationPrefs
+      summary: Get the current user's notification preferences
+      responses:
+        "200":
+          description: Notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPrefs"
+        "401":
+          description: Unauthorized
+    put:
+      tags: [account]
+      operationId: updateNotificationPrefs
+      summary: Update the current user's notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationPrefsInput"
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPrefs"
+        "401":
+          description: Unauthorized
+
+  /broker/connect:
+    post:
+      tags: [broker]
+      operationId: connectBroker
+      summary: Link an Alpaca brokerage account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectBrokerInput"
+      responses:
+        "200":
+          description: Broker connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerStatus"
+        "400":
+          description: Invalid credentials
+        "401":
+          description: Unauthorized
+
+  /broker/status:
+    get:
+      tags: [broker]
+      operationId: getBrokerStatus
+      summary: Get broker connection status and account summary
+      responses:
+        "200":
+          description: Broker status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerStatus"
+        "401":
+          description: Unauthorized
+
+  /broker/disconnect:
+    delete:
+      tags: [broker]
+      operationId: disconnectBroker
+      summary: Remove linked brokerage account
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+        "401":
+          description: Unauthorized
+
+  /broker/positions:
+    get:
+      tags: [broker]
+      operationId: listBrokerPositions
+      summary: List open positions in the linked brokerage account
+      responses:
+        "200":
+          description: Positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BrokerPosition"
+        "400":
+          description: No broker connected
+        "401":
+          description: Unauthorized
+
+  /broker/orders:
+    get:
+      tags: [broker]
+      operationId: listBrokerOrders
+      summary: List recent orders in the linked brokerage account
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BrokerOrder"
+        "400":
+          description: No broker connected
+        "401":
+          description: Unauthorized
+    post:
+      tags: [broker]
+      operationId: placeBrokerOrder
+      summary: Place a real-money market order (notional, fractional supported)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceBrokerOrderInput"
+      responses:
+        "200":
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerOrder"
+        "400":
+          description: Invalid order or broker error
+        "401":
+          description: Unauthorized
+
+  /broker/auto-trade:
+    get:
+      tags: [broker]
+      operationId: getBrokerAutoTradeSettings
+      summary: Get real-money auto-trade settings for the linked broker account
+      responses:
+        "200":
+          description: Real-money auto-trade settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerAutoTradeSettings"
+        "400":
+          description: No broker connected
+        "401":
+          description: Unauthorized
+    put:
+      tags: [broker]
+      operationId: updateBrokerAutoTradeSettings
+      summary: Update real-money auto-trade settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBrokerAutoTradeInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerAutoTradeSettings"
+        "400":
+          description: No broker connected or invalid input
+        "401":
+          description: Unauthorized
+
+  /broker/oanda/connect:
+    post:
+      tags: [broker]
+      operationId: connectOanda
+      summary: Link an OANDA account for forex, commodity, and index CFD trading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectOandaInput"
+      responses:
+        "200":
+          description: OANDA connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OandaStatus"
+        "400":
+          description: Invalid credentials
+        "401":
+          description: Unauthorized
+
+  /broker/oanda/status:
+    get:
+      tags: [broker]
+      operationId: getOandaStatus
+      summary: Get OANDA connection status and account summary
+      responses:
+        "200":
+          description: OANDA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OandaStatus"
+        "401":
+          description: Unauthorized
+
+  /broker/oanda/disconnect:
+    delete:
+      tags: [broker]
+      operationId: disconnectOanda
+      summary: Remove linked OANDA account
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+
+  /broker/oanda/auto-trade:
+    get:
+      tags: [broker]
+      operationId: getOandaAutoTradeSettings
+      summary: Get real-money auto-trade settings for the linked OANDA account
+      responses:
+        "200":
+          description: OANDA auto-trade settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OandaAutoTradeSettings"
+        "400":
+          description: No OANDA account connected
+        "401":
+          description: Unauthorized
+    put:
+      tags: [broker]
+      operationId: updateOandaAutoTradeSettings
+      summary: Update real-money auto-trade settings for OANDA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBrokerAutoTradeInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OandaAutoTradeSettings"
+        "400":
+          description: No OANDA account connected or invalid input
+        "401":
+          description: Unauthorized
+
+  /broker/kraken/connect:
+    post:
+      tags: [broker]
+      operationId: connectKraken
+      summary: Link a Kraken Spot account for manual crypto trading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectKrakenInput"
+      responses:
+        "200":
+          description: Kraken connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KrakenStatus"
+        "400":
+          description: Invalid credentials
+        "401":
+          description: Unauthorized
+
+  /broker/kraken/status:
+    get:
+      tags: [broker]
+      operationId: getKrakenStatus
+      summary: Get Kraken Spot connection and balance status
+      responses:
+        "200":
+          description: Kraken connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KrakenStatus"
+        "401":
+          description: Unauthorized
+
+  /broker/kraken/disconnect:
+    delete:
+      tags: [broker]
+      operationId: disconnectKraken
+      summary: Remove linked Kraken Spot account
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+
+  /broker/kraken/auto-trade:
+    get:
+      tags: [broker]
+      operationId: getKrakenAutoTradeSettings
+      summary: Get Kraken AI auto-trade limits
+      responses:
+        "200":
+          description: Kraken AI auto-trade settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KrakenAutoTradeSettings"
+        "400":
+          description: No Kraken account connected
+        "401":
+          description: Unauthorized
+    put:
+      tags: [broker]
+      operationId: updateKrakenAutoTradeSettings
+      summary: Update Kraken AI auto-trade settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBrokerAutoTradeInput"
+      responses:
+        "200":
+          description: Updated Kraken AI auto-trade settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KrakenAutoTradeSettings"
+        "400":
+          description: No Kraken account connected or invalid settings
+        "401":
+          description: Unauthorized
+
+components:
+  parameters:
+    AuthorizationSessionHeader:
+      name: Authorization
+      in: header
+      required: false
+      description: Opaque session token — `Bearer <sid>`.
+      schema:
+        type: string
+    SessionCookie:
+      name: sid
+      in: cookie
+      required: false
+      description: Browser session cookie.
+      schema:
+        type: string
+  schemas:
+    NotificationPrefs:
+      type: object
+      properties:
+        autoTradeEmailAlerts:
+          type: boolean
+        email:
+          type: string
+          nullable: true
+          description: Destination email address (from the sign-in provider), null if none is on file
+      required: [autoTradeEmailAlerts, email]
+    UpdateNotificationPrefsInput:
+      type: object
+      properties:
+        autoTradeEmailAlerts:
+          type: boolean
+      required: [autoTradeEmailAlerts]
+    ConnectBrokerInput:
+      type: object
+      properties:
+        apiKey:
+          type: string
+          minLength: 1
+        apiSecret:
+          type: string
+          minLength: 1
+        mode:
+          type: string
+          enum: [paper, live]
+      required: [apiKey, apiSecret, mode]
+    BrokerStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        mode:
+          type: string
+          enum: [paper, live]
+        apiKeyMasked:
+          type: string
+        accountNumber:
+          type: string
+        currency:
+          type: string
+        cash:
+          type: number
+        buyingPower:
+          type: number
+        equity:
+          type: number
+        portfolioValue:
+          type: number
+        status:
+          type: string
+        longMarketValue:
+          type: number
+        shortMarketValue:
+          type: number
+        daytradeCount:
+          type: number
+        patternDayTrader:
+          type: boolean
+        shortingEnabled:
+          type: boolean
+        multiplier:
+          type: number
+        maintenanceMargin:
+          type: number
+        initialMargin:
+          type: number
+        lastEquity:
+          type: number
+        createdAt:
+          type: string
+      required: [connected]
+    BrokerPosition:
+      type: object
+      properties:
+        symbol:
+          type: string
+        assetClass:
+          type: string
+        qty:
+          type: number
+        marketValue:
+          type: number
+        avgEntryPrice:
+          type: number
+        currentPrice:
+          type: number
+        unrealizedPl:
+          type: number
+        unrealizedPlPercent:
+          type: number
+        side:
+          type: string
+      required:
+        [
+          symbol,
+          assetClass,
+          qty,
+          marketValue,
+          avgEntryPrice,
+          currentPrice,
+          unrealizedPl,
+          unrealizedPlPercent,
+          side,
+        ]
+    PlaceBrokerOrderInput:
+      type: object
+      properties:
+        symbol:
+          type: string
+          minLength: 1
+        side:
+          type: string
+          enum: [buy, sell]
+        notional:
+          type: number
+          minimum: 1
+      required: [symbol, side, notional]
+    BrokerAutoTradeSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        maxPerTradeUsd:
+          type: number
+        dailyLimitUsd:
+          type: number
+        spentTodayUsd:
+          type: number
+        mode:
+          type: string
+          enum: [paper, live]
+      required: [enabled, maxPerTradeUsd, dailyLimitUsd, spentTodayUsd, mode]
+    UpdateBrokerAutoTradeInput:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        maxPerTradeUsd:
+          type: number
+          minimum: 1
+          maximum: 10000
+        dailyLimitUsd:
+          type: number
+          minimum: 1
+          maximum: 100000
+    ConnectOandaInput:
+      type: object
+      properties:
+        apiToken:
+          type: string
+          minLength: 1
+        accountId:
+          type: string
+          minLength: 1
+        mode:
+          type: string
+          enum: [practice, live]
+      required: [apiToken, accountId, mode]
+    OandaStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        mode:
+          type: string
+          enum: [practice, live]
+        accountIdMasked:
+          type: string
+        currency:
+          type: string
+        balance:
+          type: number
+        nav:
+          type: number
+        unrealizedPl:
+          type: number
+        marginAvailable:
+          type: number
+        openPositionCount:
+          type: number
+        marginUsed:
+          type: number
+        marginRate:
+          type: number
+        openTradeCount:
+          type: number
+        pendingOrderCount:
+          type: number
+        realizedPl:
+          type: number
+        withdrawalLimit:
+          type: number
+        alias:
+          type: string
+        createdTime:
+          type: string
+      required: [connected]
+    ConnectKrakenInput:
+      type: object
+      properties:
+        apiKey:
+          type: string
+          minLength: 1
+        apiSecret:
+          type: string
+          minLength: 1
+      required: [apiKey, apiSecret]
+    KrakenStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        mode:
+          type: string
+          enum: [live]
+        apiKeyMasked:
+          type: string
+        cash:
+          type: number
+        equity:
+          type: number
+      required: [connected]
+    KrakenAutoTradeSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        maxPerTradeUsd:
+          type: number
+        dailyLimitUsd:
+          type: number
+        spentTodayUsd:
+          type: number
+        mode:
+          type: string
+          enum: [live]
+      required: [enabled, maxPerTradeUsd, dailyLimitUsd, spentTodayUsd, mode]
+    OandaAutoTradeSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        maxPerTradeUsd:
+          type: number
+        dailyLimitUsd:
+          type: number
+        spentTodayUsd:
+          type: number
+        mode:
+          type: string
+          enum: [practice, live]
+      required: [enabled, maxPerTradeUsd, dailyLimitUsd, spentTodayUsd, mode]
+    BrokerOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+        notional:
+          type: number
+          nullable: true
+        qty:
+          type: number
+          nullable: true
+        filledQty:
+          type: number
+          nullable: true
+        filledAvgPrice:
+          type: number
+          nullable: true
+        status:
+          type: string
+        createdAt:
+          type: string
+      required: [id, symbol, side, status, createdAt]
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Coin:
+      type: object
+      required:
+        [symbol, name, price, change24h, marketCap, volume, logoUrl, assetType]
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change24h:
+          type: number
+        marketCap:
+          type: number
+        volume:
+          type: number
+        logoUrl:
+          type: string
+        assetType:
+          type: string
+          enum: [crypto, stock, forex, futures, commodity]
+
+    PricePoint:
+      type: object
+      required: [timestamp, price]
+      properties:
+        timestamp:
+          type: string
+        price:
+          type: number
+
+    CoinDetail:
+      type: object
+      required:
+        [
+          symbol,
+          name,
+          price,
+          change24h,
+          marketCap,
+          volume,
+          logoUrl,
+          priceHistory,
+          high24h,
+          low24h,
+          description,
+          assetType,
+        ]
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change24h:
+          type: number
+        assetType:
+          type: string
+          enum: [crypto, stock, forex, futures, commodity]
+        marketCap:
+          type: number
+        volume:
+          type: number
+        logoUrl:
+          type: string
+        high24h:
+          type: number
+        low24h:
+          type: number
+        description:
+          type: string
+        priceHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricePoint"
+
+    Holding:
+      type: object
+      required:
+        [
+          symbol,
+          name,
+          quantity,
+          avgBuyPrice,
+          currentPrice,
+          currentValue,
+          pnl,
+          pnlPercent,
+          logoUrl,
+          broker,
+        ]
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: number
+        avgBuyPrice:
+          type: number
+        currentPrice:
+          type: number
+        currentValue:
+          type: number
+        pnl:
+          type: number
+        pnlPercent:
+          type: number
+        logoUrl:
+          type: string
+        broker:
+          type: string
+
+    Portfolio:
+      type: object
+      required:
+        [
+          usdBalance,
+          totalValue,
+          totalInvested,
+          totalPnl,
+          totalPnlPercent,
+          holdings,
+          alpacaConnected,
+          oandaConnected,
+        ]
+      properties:
+        usdBalance:
+          type: number
+        totalValue:
+          type: number
+        totalInvested:
+          type: number
+        totalPnl:
+          type: number
+        totalPnlPercent:
+          type: number
+        alpacaConnected:
+          type: boolean
+        oandaConnected:
+          type: boolean
+        holdings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Holding"
+
+    Trade:
+      type: object
+      required:
+        [
+          id,
+          symbol,
+          name,
+          side,
+          quantity,
+          price,
+          total,
+          createdAt,
+          logoUrl,
+          broker,
+          status,
+        ]
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        quantity:
+          type: number
+        price:
+          type: number
+        total:
+          type: number
+        createdAt:
+          type: string
+        logoUrl:
+          type: string
+        broker:
+          type: string
+        status:
+          type: string
+
+    TradeInput:
+      type: object
+      required: [symbol, side, notional]
+      properties:
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        notional:
+          type: number
+          minimum: 1
+
+    Prediction:
+      type: object
+      required:
+        [
+          symbol,
+          signal,
+          confidence,
+          reasoning,
+          targetPrice,
+          targetDate,
+          currentPrice,
+        ]
+      properties:
+        symbol:
+          type: string
+        signal:
+          type: string
+          enum: [strong_buy, buy, hold, sell, strong_sell]
+        confidence:
+          type: number
+        reasoning:
+          type: string
+        targetPrice:
+          type: number
+        targetDate:
+          type: string
+        currentPrice:
+          type: number
+
+    MarketSummary:
+      type: object
+      required:
+        [
+          portfolioValue,
+          portfolioChange24h,
+          portfolioChange24hPercent,
+          usdBalance,
+          topGainer,
+          topLoser,
+          totalCoins,
+          fearGreedIndex,
+          fearGreedLabel,
+          alpacaConnected,
+          oandaConnected,
+        ]
+      properties:
+        portfolioValue:
+          type: number
+        portfolioChange24h:
+          type: number
+        portfolioChange24hPercent:
+          type: number
+        usdBalance:
+          type: number
+        alpacaConnected:
+          type: boolean
+        oandaConnected:
+          type: boolean
+        topGainer:
+          $ref: "#/components/schemas/Coin"
+        topLoser:
+          $ref: "#/components/schemas/Coin"
+        totalCoins:
+          type: integer
+        fearGreedIndex:
+          type: integer
+        fearGreedLabel:
+          type: string
+
+    WatchlistItem:
+      type: object
+      required: [id, symbol, name, price, change24h, logoUrl]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change24h:
+          type: number
+        logoUrl:
+          type: string
+
+    WatchlistInput:
+      type: object
+      required: [symbol]
+      properties:
+        symbol:
+          type: string
+
+    AutoTradeSettings:
+      type: object
+      required:
+        [id, enabled, riskLevel, maxTradeAmountUsd, intervalMinutes, lastRunAt]
+      properties:
+        id:
+          type: integer
+        enabled:
+          type: boolean
+        riskLevel:
+          type: string
+          enum: [conservative, moderate, aggressive]
+        maxTradeAmountUsd:
+          type: number
+        intervalMinutes:
+          type: integer
+        runMode:
+          type: string
+          enum: [interval, scheduled, continuous]
+        scheduledTime:
+          type: string
+          nullable: true
+        assetClasses:
+          type: string
+        lastRunAt:
+          type: string
+          nullable: true
+        exitGuardsEnabled:
+          type: boolean
+        takeProfitPct:
+          type: number
+          nullable: true
+        stopLossPct:
+          type: number
+          nullable: true
+        dayTradeEnabled:
+          type: boolean
+        dayTradeMaxUsd:
+          type: number
+
+    AutoTradeSettingsInput:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        riskLevel:
+          type: string
+          enum: [conservative, moderate, aggressive]
+        maxTradeAmountUsd:
+          type: number
+        intervalMinutes:
+          type: integer
+        runMode:
+          type: string
+          enum: [interval, scheduled, continuous]
+        scheduledTime:
+          type: string
+          nullable: true
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        assetClasses:
+          type: string
+          pattern: "^(crypto|stock|forex|futures|commodity)(,(crypto|stock|forex|futures|commodity)){0,4}$"
+        exitGuardsEnabled:
+          type: boolean
+        takeProfitPct:
+          type: number
+          nullable: true
+          minimum: 0.1
+          maximum: 1000
+        stopLossPct:
+          type: number
+          nullable: true
+          minimum: 0.1
+          maximum: 99
+        dayTradeEnabled:
+          type: boolean
+        dayTradeMaxUsd:
+          type: number
+          minimum: 1
+          maximum: 1000000
+
+    AutoTradeLogEntry:
+      type: object
+      required:
+        [
+          id,
+          symbol,
+          name,
+          decision,
+          reasoning,
+          confidence,
+          amountUsd,
+          executed,
+          tradeId,
+          createdAt,
+          logoUrl,
+        ]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        decision:
+          type: string
+          enum: [buy, sell, hold]
+        reasoning:
+          type: string
+        confidence:
+          type: number
+        amountUsd:
+          type: number
+        executed:
+          type: boolean
+        tradeId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+        logoUrl:
+          type: string
+
+    AutoTradeRunStatus:
+      type: object
+      required: [running, longtermRunning, daytradeRunning]
+      properties:
+        running:
+          type: boolean
+          description: True if any strategy's cycle is running
+        longtermRunning:
+          type: boolean
+        daytradeRunning:
+          type: boolean
+
+    AutoTradeRunResult:
+      type: object
+      required: [entriesEvaluated, tradesExecuted, log]
+      properties:
+        entriesEvaluated:
+          type: integer
+        tradesExecuted:
+          type: integer
+        log:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutoTradeLogEntry"
+
+    AutoTradeEvent:
+      type: object
+      required:
+        [
+          id,
+          broker,
+          symbol,
+          side,
+          notionalUsd,
+          outcome,
+          reasonCode,
+          message,
+          createdAt,
+        ]
+      properties:
+        id:
+          type: integer
+        broker:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        notionalUsd:
+          type: number
+        outcome:
+          type: string
+          enum: [executed, skipped, rejected]
+        reasonCode:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        strategy:
+          type: string
+          enum: [longterm, daytrade]
+        fillPrice:
+          type: number
+          nullable: true
+
+    AutoTradePnlPosition:
+      type: object
+      required:
+        [
+          symbol,
+          broker,
+          realizedPnlUsd,
+          buysUsd,
+          sellsUsd,
+          openQty,
+          avgCostUsd,
+          trades,
+        ]
+      properties:
+        symbol:
+          type: string
+        broker:
+          type: string
+        realizedPnlUsd:
+          type: number
+          nullable: true
+          description: Realized profit/loss from matched buy→sell round trips (null when fill data is missing)
+        buysUsd:
+          type: number
+        sellsUsd:
+          type: number
+        openQty:
+          type: number
+          description: Quantity bought by the bot that has not been sold yet
+        avgCostUsd:
+          type: number
+          nullable: true
+          description: Average cost per unit of the remaining open quantity
+        trades:
+          type: integer
+
+    AutoTradePnl:
+      type: object
+      required:
+        [
+          windowDays,
+          totalRealizedPnlUsd,
+          totalBuysUsd,
+          totalSellsUsd,
+          netCashFlowUsd,
+          executedTrades,
+          positions,
+        ]
+      properties:
+        windowDays:
+          type: integer
+          description: How many days of bot activity the summary covers
+        totalRealizedPnlUsd:
+          type: number
+          nullable: true
+          description: Sum of realized P&L across symbols with fill data (null when no trades have fill data)
+        totalBuysUsd:
+          type: number
+        totalSellsUsd:
+          type: number
+        netCashFlowUsd:
+          type: number
+          description: Sell proceeds minus buy spend (includes trades without fill data)
+        executedTrades:
+          type: integer
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutoTradePnlPosition"
+
+    Candle:
+      type: object
+      required: [time, open, high, low, close]
+      properties:
+        time:
+          type: string
+          description: ISO timestamp of the candle open
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+
+    CandleSeries:
+      type: object
+      required: [symbol, intervalMinutes, candles]
+      properties:
+        symbol:
+          type: string
+        intervalMinutes:
+          type: integer
+        candles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candle"
+
+    AutoTradeBrokerAlert:
+      type: object
+      required:
+        [
+          connected,
+          autoTradeEnabled,
+          dailyLimitReached,
+          spentTodayUsd,
+          dailyLimitUsd,
+          recentRejections,
+        ]
+      properties:
+        connected:
+          type: boolean
+        autoTradeEnabled:
+          type: boolean
+        dailyLimitReached:
+          type: boolean
+        spentTodayUsd:
+          type: number
+        dailyLimitUsd:
+          type: number
+        recentRejections:
+          type: integer
+
+    AutoTradeAlerts:
+      type: object
+      required: [alpaca, oanda, lastRejectionMessage]
+      properties:
+        alpaca:
+          $ref: "#/components/schemas/AutoTradeBrokerAlert"
+        oanda:
+          $ref: "#/components/schemas/AutoTradeBrokerAlert"
+        lastRejectionMessage:
+          type: string
+          nullable: true
+
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id:
+          type: string
+        email:
+          type: [string, "null"]
+        firstName:
+          type: [string, "null"]
+        lastName:
+          type: [string, "null"]
+        profileImageUrl:
+          type: [string, "null"]
+    AuthUserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+    AuthCredentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        confirmPassword:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+    LogoutSuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+
+    UserProfile:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id:
+          type: string
+        email:
+          type: [string, "null"]
+        firstName:
+          type: [string, "null"]
+        lastName:
+          type: [string, "null"]
+        profileImageUrl:
+          type: [string, "null"]
+        phone:
+          type: [string, "null"]
+        dateOfBirth:
+          type: [string, "null"]
+        address:
+          type: [string, "null"]
+        city:
+          type: [string, "null"]
+        state:
+          type: [string, "null"]
+        country:
+          type: [string, "null"]
+        postalCode:
+          type: [string, "null"]
+
+    UpdateProfileInput:
+      type: object
+      properties:
+        phone:
+          type: string
+        dateOfBirth:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postalCode:
+          type: string

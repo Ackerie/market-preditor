@@ -1,0 +1,14 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "VOe7yZzY4di9p8Jc9xNZS"
+uri = "file://SETUP.md"
+type = "text"
+title = "NexusTrade — VS Code Setup Guide"
+
+[[outputs]]
+id = "jOYsu319KdxkUt-qJOu9R"
+uri = "file://GUIDE.md"
+type = "text"
+title = "NexusTrade Improvement Guide"
