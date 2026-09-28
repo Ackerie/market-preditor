@@ -6,6 +6,7 @@ import {
   getListCoinsQueryKey,
   getGetCoinQueryKey,
 } from "@workspace/api-client-react";
+import { InteractiveMarketChart } from "@/components/interactive-market-chart";
 import { formatCurrency, formatPercent, CoinIcon } from "@/components/shared";
 import {
   Activity,
@@ -21,15 +22,6 @@ import {
   Settings2,
   SlidersHorizontal,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 type FlashDir = "up" | "down" | null;
 interface PriceEvent {
@@ -55,13 +47,17 @@ export default function LiveUpdates() {
   const [selectedSymbol, setSelectedSymbol] = useState("");
   const [search, setSearch] = useState("");
   const [market, setMarket] = useState("All markets");
-  const [timeframe, setTimeframe] = useState("5m");
   const [flashes, setFlashes] = useState<Record<string, FlashDir>>({});
   const [events, setEvents] = useState<PriceEvent[]>([]);
   const prevPrices = useRef<Record<string, number>>({});
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const queryClient = useQueryClient();
-  const { data: coins } = useListCoins();
+  const { data: coins } = useListCoins(undefined, {
+    query: {
+      queryKey: getListCoinsQueryKey(),
+      refetchInterval: 2000,
+    },
+  });
   const selectedCoin =
     coins?.find((coin) => coin.symbol === selectedSymbol) ?? coins?.[0];
   const activeSymbol = selectedCoin?.symbol ?? "";
@@ -69,6 +65,7 @@ export default function LiveUpdates() {
     query: {
       enabled: !!activeSymbol,
       queryKey: getGetCoinQueryKey(activeSymbol),
+      refetchInterval: 5000,
     },
   });
 
@@ -138,8 +135,6 @@ export default function LiveUpdates() {
     .sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))
     .slice(0, 7);
   const isUp = (selectedCoin?.change24h ?? 0) >= 0;
-  const chartColor = isUp ? "#26c281" : "#f0526d";
-  const chartData = coinDetail?.priceHistory ?? [];
 
   return (
     <div className="space-y-3 pb-16 text-[13px]">
@@ -341,107 +336,15 @@ export default function LiveUpdates() {
                   </ChartTool>
                 </div>
                 <div className="flex items-center gap-1">
-                  {["1m", "5m", "15m", "1h", "1D"].map((item) => (
-                    <button
-                      key={item}
-                      onClick={() => setTimeframe(item)}
-                      className={`px-2 py-1 text-[11px] ${timeframe === item ? "bg-primary/15 font-semibold text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                    >
-                      {item}
-                    </button>
-                  ))}
+                  <span className="text-[10px] text-muted-foreground">OHLC · live</span>
                 </div>
               </div>
-              <div className="h-82.5 w-full px-1 pt-4 sm:h-100">
-                {chartData.length ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={chartData}
-                      margin={{ top: 8, right: 50, left: 4, bottom: 16 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id="liveChartFill"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="0%"
-                            stopColor={chartColor}
-                            stopOpacity={0.22}
-                          />
-                          <stop
-                            offset="100%"
-                            stopColor={chartColor}
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        stroke="var(--color-border)"
-                        strokeDasharray="2 4"
-                        vertical={false}
-                        opacity={0.45}
-                      />
-                      <XAxis
-                        dataKey="timestamp"
-                        tick={{
-                          fill: "var(--color-muted-foreground)",
-                          fontSize: 10,
-                        }}
-                        tickLine={false}
-                        axisLine={false}
-                        minTickGap={36}
-                      />
-                      <YAxis
-                        orientation="right"
-                        domain={["auto", "auto"]}
-                        tick={{
-                          fill: "var(--color-muted-foreground)",
-                          fontSize: 10,
-                        }}
-                        tickLine={false}
-                        axisLine={false}
-                        width={46}
-                        tickFormatter={(value: number) =>
-                          value >= 1000
-                            ? `$${(value / 1000).toFixed(1)}k`
-                            : `$${value.toFixed(2)}`
-                        }
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: "var(--color-card)",
-                          border: "1px solid var(--color-border)",
-                          fontSize: 11,
-                        }}
-                        formatter={(value: number) => [
-                          formatCurrency(value),
-                          "Price",
-                        ]}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="price"
-                        stroke={chartColor}
-                        strokeWidth={2}
-                        fill="url(#liveChartFill)"
-                        dot={false}
-                        activeDot={{ r: 4, fill: chartColor, strokeWidth: 0 }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    Loading price history...
-                  </div>
-                )}
+              <div className="w-full px-1 pt-2">
+                <InteractiveMarketChart symbol={activeSymbol} height={390} compact />
               </div>
               <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
-                <span>Price · {timeframe}</span>
-                <span>Updated just now</span>
+                <span>Hover candles for OHLC and volume</span>
+                <span>Refreshing every 5s</span>
               </div>
             </>
           ) : (

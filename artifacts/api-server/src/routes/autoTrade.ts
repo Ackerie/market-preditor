@@ -37,6 +37,10 @@ import {
 } from "../lib/brokers";
 import { computeAutoTradePnl } from "../lib/autoTradePnl";
 import { assessTradeRisk } from "../lib/tradeRisk";
+import {
+  analyzeCandles,
+  formatTechnicalAnalysis,
+} from "../lib/technicalAnalysis";
 import { eq, desc, and, gte } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -379,13 +383,14 @@ async function executeAutoTradeCycle(
       isDayTrade ? "5m" : "1h",
       marketAccountCache,
     );
+    const candles =
+      nativeBars.bars.length > 0
+        ? nativeBars.bars
+        : getCandles(asset.symbol, asset.basePrice);
+    const technicalAnalysis = analyzeCandles(candles, currentPrice);
     // Broker-native bars are preferred. Simulated candles remain available for
     // local development, but are marked stale and block new entries by default.
     const candleSection = (() => {
-      const candles =
-        nativeBars.bars.length > 0
-          ? nativeBars.bars
-          : getCandles(asset.symbol, asset.basePrice);
       const recent = candles.slice(-12);
       const fmt = (n: number) =>
         n < 1 ? n.toFixed(5) : n < 10 ? n.toFixed(4) : n.toFixed(2);
@@ -394,7 +399,7 @@ async function executeAutoTradeCycle(
 time | open | high | low | close
 ${recent.map((c) => `${c.time.slice(11, 16)} | ${fmt(c.open)} | ${fmt(c.high)} | ${fmt(c.low)} | ${fmt(c.close)}`).join("\n")}
 Read the candles for momentum, trend, and reversal patterns before deciding. Treat simulated data as unreliable.`;
-    })();
+  })() + formatTechnicalAnalysis(technicalAnalysis);
 
     try {
       const prompt = `${
@@ -428,6 +433,8 @@ ${
 - Real money is at stake — only signal buy/sell with genuine conviction
 - ${isDayTrade ? "Day-trading mindset: capture intraday moves, don't marry positions" : "Position-trading mindset: favor durable multi-day setups over intraday noise"}
 - Prefer hold when the setup is unclear
+- Treat the deterministic technical analysis as hard evidence and do not override its risk flags without a specific reason.
+- Do not buy if the expected move does not support at least 2:1 reward/risk; do not chase near resistance.
 - ${asset.assetType === "futures" || asset.assetType === "commodity" ? "Leveraged CFD instruments: require higher conviction (65%+ confidence min)" : "Standard risk rules apply"}
 
 Respond ONLY with valid JSON (no markdown):
@@ -459,6 +466,7 @@ Respond ONLY with valid JSON (no markdown):
       takeProfitPct: aiResponse.takeProfitPct ?? 0,
       riskFlags: [
         ...(aiResponse.riskFlags ?? []),
+        ...technicalAnalysis.riskFlags,
         ...(nativeBars.source === "simulated" && !allowSimulatedData
           ? ["data_stale"]
           : []),

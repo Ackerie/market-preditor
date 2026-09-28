@@ -16,16 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, CoinIcon } from "@/components/shared";
-import { 
-  AreaChart, 
-  Area,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip as RechartsTooltip, 
-  ResponsiveContainer 
-} from "recharts";
-import { format } from "date-fns";
+import { InteractiveMarketChart } from "@/components/interactive-market-chart";
 
 const ASSET_TYPES = [
   { value: "crypto" as const, label: "Crypto" },
@@ -66,7 +57,8 @@ export default function Trade() {
   const { data: coinDetail, isLoading: coinDetailLoading } = useGetCoin(selectedCoin!, {
     query: {
       enabled: !!selectedCoin,
-      queryKey: getGetCoinQueryKey(selectedCoin!)
+      queryKey: getGetCoinQueryKey(selectedCoin!),
+      refetchInterval: 5000,
     }
   });
 
@@ -178,68 +170,11 @@ export default function Trade() {
             )}
 
             <CardContent className="p-0">
-              <div className="h-[340px] w-full">
+              <div className="w-full px-1 pb-3">
                 {coinDetailLoading || !coinDetail ? (
-                  <Skeleton className="w-full h-full rounded-none" />
+                  <Skeleton className="w-full h-[340px] rounded-none" />
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={coinDetail.priceHistory} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
-                      <defs>
-                        <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop
-                            offset="5%"
-                            stopColor={coinDetail.change24h >= 0 ? '#22c55e' : '#ef4444'}
-                            stopOpacity={0.2}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor={coinDetail.change24h >= 0 ? '#22c55e' : '#ef4444'}
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} opacity={0.5} />
-                      <XAxis 
-                        dataKey="timestamp" 
-                        tickFormatter={(val) => format(new Date(val), "HH:mm")}
-                        stroke="var(--color-muted-foreground)"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                        minTickGap={40}
-                      />
-                      <YAxis 
-                        domain={['auto', 'auto']} 
-                        tickFormatter={(val) => {
-                          if (val >= 1000) return `$${(val / 1000).toFixed(0)}k`;
-                          if (val >= 1) return `$${val.toFixed(2)}`;
-                          return `$${val.toFixed(4)}`;
-                        }}
-                        stroke="var(--color-muted-foreground)"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                        width={72}
-                        orientation="right"
-                      />
-                      <RechartsTooltip 
-                        contentStyle={{ backgroundColor: 'var(--color-card)', borderColor: 'var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
-                        itemStyle={{ color: 'var(--color-foreground)' }}
-                        labelStyle={{ color: 'var(--color-muted-foreground)' }}
-                        labelFormatter={(label) => format(new Date(label), "MMM d, yyyy HH:mm")}
-                        formatter={(value: number) => [formatCurrency(value), 'Price']}
-                      />
-                      <Area
-                        type="monotone" 
-                        dataKey="price" 
-                        stroke={coinDetail.change24h >= 0 ? '#22c55e' : '#ef4444'}
-                        strokeWidth={2}
-                        fill="url(#priceGradient)"
-                        dot={false}
-                        activeDot={{ r: 5, fill: coinDetail.change24h >= 0 ? '#22c55e' : '#ef4444', strokeWidth: 0 }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <InteractiveMarketChart symbol={selectedCoin} height={340} />
                 )}
               </div>
             </CardContent>
