@@ -2,10 +2,14 @@ import { FormEvent, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function ResetPassword() {
   const [, navigate] = useLocation();
-  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+  const token =
+    new URLSearchParams(window.location.hash.slice(1)).get("token") ??
+    new URLSearchParams(window.location.search).get("token") ??
+    "";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,24 +51,32 @@ export default function ResetPassword() {
           </p>
         </div>
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <Input
-            type="password"
-            placeholder="New password"
-            autoComplete="new-password"
-            minLength={8}
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          <Input
-            type="password"
-            placeholder="Confirm new password"
-            autoComplete="new-password"
-            minLength={8}
-            required
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-          />
+          <div className="space-y-2">
+            <Label htmlFor="new-password">New password</Label>
+            <Input
+              id="new-password"
+              type="password"
+              placeholder="New password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-new-password">Confirm new password</Label>
+            <Input
+              id="confirm-new-password"
+              type="password"
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {message && <p className="text-sm text-primary">{message}</p>}
           <Button
@@ -75,6 +87,21 @@ export default function ResetPassword() {
             {isSubmitting ? "Updating..." : "Update password"}
           </Button>
         </form>
+        <p className="text-center text-xs leading-5 text-muted-foreground">
+          By resetting your password, you acknowledge the{" "}
+          <Link href="/terms" className="text-primary hover:underline">
+            Terms and Conditions
+          </Link>
+          ,{" "}
+          <Link href="/cookies" className="text-primary hover:underline">
+            Cookie Policy
+          </Link>
+          , and{" "}
+          <Link href="/refunds" className="text-primary hover:underline">
+            Refund Policy
+          </Link>
+          .
+        </p>
         <Link
           href="/login"
           className="block text-center text-sm text-primary hover:underline"

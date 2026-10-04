@@ -562,41 +562,6 @@ export const LogoutBrowserSessionHeader = zod.object({
 });
 
 /**
- * @summary Get the current user's profile
- */
-export const GetAccountProfileResponse = zod.object({
-  id: zod.string(),
-  email: zod.string().nullable(),
-  firstName: zod.string().nullable(),
-  lastName: zod.string().nullable(),
-  profileImageUrl: zod.string().nullable(),
-  phone: zod.string().nullish(),
-  dateOfBirth: zod.string().nullish(),
-  address: zod.string().nullish(),
-  city: zod.string().nullish(),
-  state: zod.string().nullish(),
-  country: zod.string().nullish(),
-  postalCode: zod.string().nullish(),
-});
-
-/**
- * @summary Update the current user's profile
- */
-export const UpdateAccountProfileBody = zod.object({
-  phone: zod.string().optional(),
-  dateOfBirth: zod.string().optional(),
-  address: zod.string().optional(),
-  city: zod.string().optional(),
-  state: zod.string().optional(),
-  country: zod.string().optional(),
-  postalCode: zod.string().optional(),
-});
-
-export const UpdateAccountProfileResponse = zod.object({
-  success: zod.boolean(),
-});
-
-/**
  * @summary Get the current user's notification preferences
  */
 export const GetNotificationPrefsResponse = zod.object({
@@ -624,6 +589,49 @@ export const UpdateNotificationPrefsResponse = zod.object({
     .describe(
       "Destination email address (from the sign-in provider), null if none is on file",
     ),
+});
+
+/**
+ * @summary Get the current user's configured AI providers
+ */
+export const GetAiCredentialsResponse = zod.object({
+  providers: zod.array(
+    zod.object({
+      provider: zod.enum(["anthropic", "openai", "gemini"]),
+      configured: zod.boolean(),
+      maskedKey: zod.string().nullable(),
+    }),
+  ),
+});
+
+/**
+ * @summary Replace one personal AI provider API key
+ */
+export const SaveAiCredentialParams = zod.object({
+  provider: zod.enum(["anthropic", "openai", "gemini"]),
+});
+
+export const saveAiCredentialBodyApiKeyMin = 10;
+
+export const SaveAiCredentialBody = zod.object({
+  apiKey: zod.string().min(saveAiCredentialBodyApiKeyMin),
+});
+
+export const SaveAiCredentialResponse = zod.object({
+  provider: zod.enum(["anthropic", "openai", "gemini"]),
+  configured: zod.boolean(),
+  maskedKey: zod.string().nullable(),
+});
+
+/**
+ * @summary Delete one personal AI provider API key
+ */
+export const DeleteAiCredentialParams = zod.object({
+  provider: zod.enum(["anthropic", "openai", "gemini"]),
+});
+
+export const DeleteAiCredentialResponse = zod.object({
+  success: zod.boolean(),
 });
 
 /**

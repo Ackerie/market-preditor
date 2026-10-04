@@ -519,40 +519,6 @@ paths:
         "302":
           description: Session ended and redirected to login.
 
-  /account/profile:
-    get:
-      tags: [account]
-      operationId: getAccountProfile
-      summary: Get the current user's profile
-      responses:
-        "200":
-          description: User profile
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserProfile"
-        "401":
-          description: Unauthorized
-    put:
-      tags: [account]
-      operationId: updateAccountProfile
-      summary: Update the current user's profile
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateProfileInput"
-      responses:
-        "200":
-          description: Updated successfully
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponse"
-        "401":
-          description: Unauthorized
-
   /account/notifications:
     get:
       tags: [account]
@@ -567,6 +533,7 @@ paths:
                 $ref: "#/components/schemas/NotificationPrefs"
         "401":
           description: Unauthorized
+
     put:
       tags: [account]
       operationId: updateNotificationPrefs
@@ -587,6 +554,63 @@ paths:
         "401":
           description: Unauthorized
 
+  /account/ai-credentials:
+    get:
+      tags: [account]
+      operationId: getAiCredentials
+      summary: Get the current user's configured AI providers
+      responses:
+        "200":
+          description: Provider configuration status without raw credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCredentialsStatus"
+        "401":
+          description: Unauthorized
+
+  /account/ai-credentials/{provider}:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [anthropic, openai, gemini]
+    put:
+      tags: [account]
+      operationId: saveAiCredential
+      summary: Replace one personal AI provider API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveAiCredentialInput"
+      responses:
+        "200":
+          description: Credential saved; raw key is never returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCredentialStatus"
+        "400":
+          description: Invalid provider or API key
+        "401":
+          description: Unauthorized
+    delete:
+      tags: [account]
+      operationId: deleteAiCredential
+      summary: Delete one personal AI provider API key
+      responses:
+        "200":
+          description: Credential deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
   /broker/connect:
     post:
       tags: [broker]
@@ -956,6 +980,32 @@ components:
         autoTradeEmailAlerts:
           type: boolean
       required: [autoTradeEmailAlerts]
+    AiCredentialStatus:
+      type: object
+      required: [provider, configured, maskedKey]
+      properties:
+        provider:
+          type: string
+          enum: [anthropic, openai, gemini]
+        configured:
+          type: boolean
+        maskedKey:
+          type: [string, "null"]
+    AiCredentialsStatus:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCredentialStatus"
+    SaveAiCredentialInput:
+      type: object
+      required: [apiKey]
+      properties:
+        apiKey:
+          type: string
+          minLength: 10
     ConnectBrokerInput:
       type: object
       properties:
@@ -1915,50 +1965,3 @@ components:
       properties:
         success:
           type: boolean
-
-    UserProfile:
-      type: object
-      required: [id, email, firstName, lastName, profileImageUrl]
-      properties:
-        id:
-          type: string
-        email:
-          type: [string, "null"]
-        firstName:
-          type: [string, "null"]
-        lastName:
-          type: [string, "null"]
-        profileImageUrl:
-          type: [string, "null"]
-        phone:
-          type: [string, "null"]
-        dateOfBirth:
-          type: [string, "null"]
-        address:
-          type: [string, "null"]
-        city:
-          type: [string, "null"]
-        state:
-          type: [string, "null"]
-        country:
-          type: [string, "null"]
-        postalCode:
-          type: [string, "null"]
-
-    UpdateProfileInput:
-      type: object
-      properties:
-        phone:
-          type: string
-        dateOfBirth:
-          type: string
-        address:
-          type: string
-        city:
-          type: string
-        state:
-          type: string
-        country:
-          type: string
-        postalCode:
-          type: string

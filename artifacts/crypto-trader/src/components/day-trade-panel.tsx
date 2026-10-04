@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { csrfFetch } from "@/lib/csrf-fetch";
 import {
   CandlestickChart as CandlestickIcon,
   Play,
@@ -217,7 +218,7 @@ export default function DayTradePanel() {
       });
       return;
     }
-    fetch("/api/auto-trade/settings", {
+    csrfFetch("/api/auto-trade/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -271,7 +272,7 @@ export default function DayTradePanel() {
         });
         return;
       }
-      const resp = await fetch("/api/auto-trade/run", {
+      const resp = await csrfFetch("/api/auto-trade/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ strategy: "daytrade" }),

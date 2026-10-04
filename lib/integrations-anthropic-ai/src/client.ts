@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-export const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  baseURL: process.env.ANTHROPIC_BASE_URL,
-});
+export function createAnthropicClient(apiKey: string, baseURL?: string) {
+  return new Anthropic({ apiKey, baseURL });
+}
+
+export const anthropic = createAnthropicClient(
+  process.env.ANTHROPIC_API_KEY ?? "",
+  process.env.ANTHROPIC_BASE_URL,
+);

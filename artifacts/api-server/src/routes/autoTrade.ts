@@ -4,10 +4,15 @@ import {
   autoTradeSettingsTable,
   autoTradeLogTable,
   autoTradeEventsTable,
+  aiCredentialsTable,
   brokerConnectionsTable,
   oandaConnectionsTable,
 } from "@workspace/db";
-import { getEnsembleSignal, type ModelVote } from "../lib/aiEnsemble";
+import {
+  getEnsembleSignal,
+  type ModelVote,
+  type UserAiCredentials,
+} from "../lib/aiEnsemble";
 import { UpdateAutoTradeSettingsBody } from "@workspace/api-zod";
 import {
   getLivePrice,
@@ -37,6 +42,9 @@ import {
 } from "../lib/brokers";
 import { computeAutoTradePnl } from "../lib/autoTradePnl";
 import { assessTradeRisk } from "../lib/tradeRisk";
+import { decryptCredential } from "../lib/credentialCrypto";
+import { consumeAiRequest } from "../lib/aiUsage";
+import { acquireAutoTradeLease, type CycleLease } from "../lib/autoTradeLock";
 import {
   analyzeCandles,
   formatTechnicalAnalysis,
@@ -48,15 +56,17 @@ const router: IRouter = Router();
 // Guards against concurrent trading cycles (manual, streaming, or scheduled).
 // Each strategy has its own lock so the day-trade bot runs fully independently
 // of the long-term bot — one can never block or starve the other.
-const cycleRunning: Record<BotStrategy, boolean> = {
-  longterm: false,
-  daytrade: false,
-};
+const cycleRunning = new Set<string>();
 
-async function ensureSettings() {
-  const existing = await db.select().from(autoTradeSettingsTable).limit(1);
+async function ensureSettings(userId: string) {
+  const existing = await db
+    .select()
+    .from(autoTradeSettingsTable)
+    .where(eq(autoTradeSettingsTable.userId, userId))
+    .limit(1);
   if (existing.length === 0) {
     await db.insert(autoTradeSettingsTable).values({
+      userId,
       enabled: false,
       riskLevel: "moderate",
       maxTradeAmountUsd: "500",
@@ -69,6 +79,7 @@ async function ensureSettings() {
   return db
     .select()
     .from(autoTradeSettingsTable)
+    .where(eq(autoTradeSettingsTable.userId, userId))
     .limit(1)
     .then((r) => r[0]);
 }
@@ -99,6 +110,7 @@ async function getNativeBars(
   assetType: string,
   timeframe: "5m" | "1h",
   accountCache: Map<string, AutoTradeAccount[]>,
+  onlyUserId?: string,
 ): Promise<{ bars: MarketBar[]; source: "broker" | "simulated" }> {
   const candidates = await Promise.all(
     listBrokers().map(async (adapter) => {
@@ -106,7 +118,7 @@ async function getNativeBars(
       if (!route) return null;
       let accounts = accountCache.get(adapter.id);
       if (!accounts) {
-        accounts = await adapter.listAutoTradeAccounts();
+        accounts = await adapter.listAutoTradeAccounts(onlyUserId);
         accountCache.set(adapter.id, accounts);
       }
       const account = accounts[0];
@@ -136,7 +148,7 @@ router.get("/auto-trade/settings", async (req, res) => {
     return;
   }
   try {
-    res.json(formatSettings(await ensureSettings()));
+    res.json(formatSettings(await ensureSettings(req.user!.id)));
   } catch {
     res.status(500).json({ error: "Failed to get settings" });
   }
@@ -153,7 +165,7 @@ router.put("/auto-trade/settings", async (req, res) => {
     return;
   }
   try {
-    const settings = await ensureSettings();
+    const settings = await ensureSettings(req.user!.id);
     const updates: Partial<typeof autoTradeSettingsTable.$inferInsert> = {};
     if (parsed.data.enabled !== undefined)
       updates.enabled = parsed.data.enabled;
@@ -205,6 +217,7 @@ router.get("/auto-trade/stats", async (req, res) => {
     const logs = await db
       .select()
       .from(autoTradeLogTable)
+      .where(eq(autoTradeLogTable.userId, req.user!.id))
       .orderBy(desc(autoTradeLogTable.createdAt))
       .limit(200);
     const today = new Date();
@@ -238,9 +251,11 @@ function sseEvent(res: Response, type: string, data: Record<string, unknown>) {
 
 async function executeAutoTradeCycle(
   settings: typeof autoTradeSettingsTable.$inferSelect,
+  userId: string,
   coinFilter?: string[],
   emit?: (type: string, data: Record<string, unknown>) => void,
   strategy: BotStrategy = "longterm",
+  lease?: CycleLease,
 ) {
   const isDayTrade = strategy === "daytrade";
   // Retention: keep the auto-trade activity history bounded (throttled internally).
@@ -251,6 +266,7 @@ async function executeAutoTradeCycle(
   let guardExits = 0;
   if (isDayTrade && settings.exitGuardsEnabled) {
     guardExits = await runExitGuards({
+      onlyUserId: userId,
       takeProfitPct:
         settings.takeProfitPct != null
           ? parseFloat(settings.takeProfitPct)
@@ -263,13 +279,13 @@ async function executeAutoTradeCycle(
 
   // The bot's current book (this strategy only) gives the AI position context
   // for exit decisions.
-  const botBook: BotBookEntry[] = await computeBotBook(strategy).catch(
+  const botBook: BotBookEntry[] = await computeBotBook(strategy, userId).catch(
     () => [],
   );
   // Per-user holders: relaxed (protective) sells may only execute for users
   // whose OWN bot book holds the symbol — never against other users' manual
   // holdings.
-  const botHolders = await computeBotHolders(strategy).catch(
+  const botHolders = await computeBotHolders(strategy, userId).catch(
     () => new Map<string, Set<string>>(),
   );
 
@@ -336,8 +352,19 @@ async function executeAutoTradeCycle(
   const marketAccountCache = new Map<string, AutoTradeAccount[]>();
   const allowSimulatedData =
     process.env.ALLOW_SIMULATED_TRADING_DATA === "true";
+  const credentialRows = await db
+    .select({
+      provider: aiCredentialsTable.provider,
+      apiKey: aiCredentialsTable.apiKey,
+    })
+    .from(aiCredentialsTable)
+    .where(eq(aiCredentialsTable.userId, userId));
+  const userAiCredentials: UserAiCredentials = Object.fromEntries(
+    credentialRows.map((row) => [row.provider, decryptCredential(row.apiKey)]),
+  ) as UserAiCredentials;
 
   for (let i = 0; i < candidateAssets.length; i++) {
+    if (lease && !lease.isHeld()) break;
     const asset = candidateAssets[i];
     const currentPrice = getLivePrice(asset.symbol, asset.basePrice);
     const change24h = get24hChange(asset.symbol);
@@ -382,6 +409,7 @@ async function executeAutoTradeCycle(
       asset.assetType,
       isDayTrade ? "5m" : "1h",
       marketAccountCache,
+      userId,
     );
     const candles =
       nativeBars.bars.length > 0
@@ -390,16 +418,17 @@ async function executeAutoTradeCycle(
     const technicalAnalysis = analyzeCandles(candles, currentPrice);
     // Broker-native bars are preferred. Simulated candles remain available for
     // local development, but are marked stale and block new entries by default.
-    const candleSection = (() => {
-      const recent = candles.slice(-12);
-      const fmt = (n: number) =>
-        n < 1 ? n.toFixed(5) : n < 10 ? n.toFixed(4) : n.toFixed(2);
-      return `
+    const candleSection =
+      (() => {
+        const recent = candles.slice(-12);
+        const fmt = (n: number) =>
+          n < 1 ? n.toFixed(5) : n < 10 ? n.toFixed(4) : n.toFixed(2);
+        return `
 ## Market Candles (${isDayTrade ? CANDLE_INTERVAL_MINUTES : 60}-minute, ${nativeBars.source} source, oldest → newest, last ${recent.length} of ${candles.length})
 time | open | high | low | close
 ${recent.map((c) => `${c.time.slice(11, 16)} | ${fmt(c.open)} | ${fmt(c.high)} | ${fmt(c.low)} | ${fmt(c.close)}`).join("\n")}
 Read the candles for momentum, trend, and reversal patterns before deciding. Treat simulated data as unreliable.`;
-  })() + formatTechnicalAnalysis(technicalAnalysis);
+      })() + formatTechnicalAnalysis(technicalAnalysis);
 
     try {
       const prompt = `${
@@ -443,9 +472,20 @@ Respond ONLY with valid JSON (no markdown):
       // The bot holds this position (for at least one user) → a single
       // model's sell vote is enough to exit (protective sell). Buys still
       // need a 2-model quorum.
-      aiResponse = await getEnsembleSignal(prompt, {
-        protectiveSell: (botHolders.get(asset.symbol)?.size ?? 0) > 0,
-      });
+      const quotaAvailable = await Promise.all(
+        (["anthropic", "openai", "gemini"] as const).map((provider) =>
+          consumeAiRequest(userId, provider),
+        ),
+      );
+      if (quotaAvailable.every(Boolean)) {
+        aiResponse = await getEnsembleSignal(
+          prompt,
+          {
+            protectiveSell: (botHolders.get(asset.symbol)?.size ?? 0) > 0,
+          },
+          userAiCredentials,
+        );
+      }
     } catch {
       /* use default */
     }
@@ -505,7 +545,8 @@ Respond ONLY with valid JSON (no markdown):
     if (
       (decision === "buy" || decision === "sell") &&
       riskAssessment.allowed &&
-      (meetsNormalBar || holderIds.length > 0)
+      (meetsNormalBar || holderIds.length > 0) &&
+      (!lease || lease.isHeld())
     ) {
       // Invest the full configured max trade amount; the executor caps it by
       // per-trade/daily limits and the broker's actual available cash.
@@ -519,6 +560,7 @@ Respond ONLY with valid JSON (no markdown):
             side: decision,
             notionalHint: amountUsd,
             strategy,
+            onlyUserId: userId,
           });
         } else {
           for (const userId of holderIds) {
@@ -583,6 +625,7 @@ Respond ONLY with valid JSON (no markdown):
   for (const entry of logEntries) {
     await db.insert(autoTradeLogTable).values({
       symbol: entry.symbol,
+      userId,
       name: entry.name,
       decision: entry.decision,
       reasoning: entry.reasoning,
@@ -619,9 +662,11 @@ router.get("/auto-trade/run-status", (req, res) => {
     return;
   }
   res.json({
-    running: cycleRunning.longterm || cycleRunning.daytrade,
-    longtermRunning: cycleRunning.longterm,
-    daytradeRunning: cycleRunning.daytrade,
+    running:
+      cycleRunning.has(`${req.user!.id}:longterm`) ||
+      cycleRunning.has(`${req.user!.id}:daytrade`),
+    longtermRunning: cycleRunning.has(`${req.user!.id}:longterm`),
+    daytradeRunning: cycleRunning.has(`${req.user!.id}:daytrade`),
   });
 });
 
@@ -633,13 +678,21 @@ router.get("/auto-trade/run-stream", async (req, res) => {
   }
   const strategy: BotStrategy =
     req.query.strategy === "daytrade" ? "daytrade" : "longterm";
-  if (cycleRunning[strategy]) {
+  const cycleKey = `${req.user!.id}:${strategy}`;
+  if (cycleRunning.has(cycleKey)) {
     res
       .status(409)
       .json({ error: "A trading cycle is already running for this strategy" });
     return;
   }
-  cycleRunning[strategy] = true;
+  const lease = await acquireAutoTradeLease(cycleKey);
+  if (!lease) {
+    res
+      .status(409)
+      .json({ error: "A trading cycle is already running for this strategy" });
+    return;
+  }
+  cycleRunning.add(cycleKey);
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -658,12 +711,20 @@ router.get("/auto-trade/run-stream", async (req, res) => {
 
   req.on("close", () => clearInterval(heartbeat));
   try {
-    const settings = await ensureSettings();
-    await executeAutoTradeCycle(settings, coinFilter, emit, strategy);
+    const settings = await ensureSettings(req.user!.id);
+    await executeAutoTradeCycle(
+      settings,
+      req.user!.id,
+      coinFilter,
+      emit,
+      strategy,
+      lease,
+    );
   } catch {
     emit("error", { message: "Auto-trade cycle failed" });
   } finally {
-    cycleRunning[strategy] = false;
+    cycleRunning.delete(cycleKey);
+    await lease.release();
     clearInterval(heartbeat);
     if (!res.writableEnded) res.end();
   }
@@ -676,29 +737,40 @@ router.post("/auto-trade/run", async (req, res) => {
   }
   const strategy: BotStrategy =
     req.body?.strategy === "daytrade" ? "daytrade" : "longterm";
-  if (cycleRunning[strategy]) {
+  const cycleKey = `${req.user!.id}:${strategy}`;
+  if (cycleRunning.has(cycleKey)) {
     res
       .status(409)
       .json({ error: "A trading cycle is already running for this strategy" });
     return;
   }
-  cycleRunning[strategy] = true;
+  const lease = await acquireAutoTradeLease(cycleKey);
+  if (!lease) {
+    res
+      .status(409)
+      .json({ error: "A trading cycle is already running for this strategy" });
+    return;
+  }
+  cycleRunning.add(cycleKey);
   try {
-    const settings = await ensureSettings();
+    const settings = await ensureSettings(req.user!.id);
     const coinFilter = Array.isArray(req.body?.coins)
       ? (req.body.coins as string[])
       : undefined;
     const result = await executeAutoTradeCycle(
       settings,
+      req.user!.id,
       coinFilter,
       undefined,
       strategy,
+      lease,
     );
     res.json(result);
   } catch {
     res.status(500).json({ error: "Failed to run auto-trade cycle" });
   } finally {
-    cycleRunning[strategy] = false;
+    cycleRunning.delete(cycleKey);
+    await lease.release();
   }
 });
 
@@ -711,6 +783,7 @@ router.get("/auto-trade/log", async (req, res) => {
     const entries = await db
       .select()
       .from(autoTradeLogTable)
+      .where(eq(autoTradeLogTable.userId, req.user!.id))
       .orderBy(desc(autoTradeLogTable.createdAt))
       .limit(100);
     res.json(
@@ -939,63 +1012,81 @@ export function startAutoTradeScheduler() {
   if (schedulerTimer) return;
   schedulerTimer = setInterval(async () => {
     try {
-      const rows = await db.select().from(autoTradeSettingsTable).limit(1);
-      if (!rows.length) return;
-      const settings = rows[0];
-
-      // Each strategy has its own lock and fires independently, in parallel —
-      // a running long-term cycle never delays the day-trade bot, and the
-      // day-trade bot never postpones a due long-term run.
       const cycles: Promise<void>[] = [];
+      const rows = await db.select().from(autoTradeSettingsTable);
 
-      // Day-trade bot: continuous while the US market is open, every 15
-      // minutes after the close.
-      if (settings.dayTradeEnabled && !cycleRunning.daytrade) {
-        const lastDayRun = settings.dayTradeLastRunAt
-          ? settings.dayTradeLastRunAt.getTime()
-          : 0;
-        const cadenceMs = isUsMarketOpen() ? 0 : DAY_TRADE_OFFHOURS_CADENCE_MS;
-        if (Date.now() - lastDayRun >= cadenceMs) {
-          cycleRunning.daytrade = true;
-          cycles.push(
-            executeAutoTradeCycle(settings, undefined, undefined, "daytrade")
-              .then(() => undefined)
-              .catch(() => undefined)
-              .finally(() => {
-                cycleRunning.daytrade = false;
-              }),
-          );
+      for (const settings of rows) {
+        const userId = settings.userId;
+        if (!userId) continue;
+
+        const dayKey = `${userId}:daytrade`;
+        if (settings.dayTradeEnabled && !cycleRunning.has(dayKey)) {
+          const lastDayRun = settings.dayTradeLastRunAt?.getTime() ?? 0;
+          const cadenceMs = isUsMarketOpen()
+            ? 0
+            : DAY_TRADE_OFFHOURS_CADENCE_MS;
+          if (Date.now() - lastDayRun >= cadenceMs) {
+            const lease = await acquireAutoTradeLease(dayKey);
+            if (lease) {
+              cycleRunning.add(dayKey);
+              cycles.push(
+                executeAutoTradeCycle(
+                  settings,
+                  userId,
+                  undefined,
+                  undefined,
+                  "daytrade",
+                  lease,
+                )
+                  .then(() => undefined)
+                  .catch(() => undefined)
+                  .finally(() => {
+                    cycleRunning.delete(dayKey);
+                    return lease.release();
+                  }),
+              );
+            }
+          }
         }
-      }
 
-      // Long-term auto-trade bot: obeys its own run mode.
-      if (settings.enabled && !cycleRunning.longterm) {
-        const runMode = settings.runMode ?? "interval";
-        const lastRun = settings.lastRunAt ? settings.lastRunAt.getTime() : 0;
-        let shouldRun = false;
-        if (runMode === "continuous") {
-          shouldRun = true;
-        } else if (runMode === "scheduled") {
-          if (settings.scheduledTime) {
+        const longtermKey = `${userId}:longterm`;
+        if (settings.enabled && !cycleRunning.has(longtermKey)) {
+          const runMode = settings.runMode ?? "interval";
+          const lastRun = settings.lastRunAt?.getTime() ?? 0;
+          let shouldRun = false;
+          if (runMode === "continuous") {
+            shouldRun = true;
+          } else if (runMode === "scheduled" && settings.scheduledTime) {
             const now = new Date();
             const cur = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
             shouldRun =
               cur === settings.scheduledTime && lastRun < Date.now() - 60_000;
+          } else if (runMode === "interval") {
+            shouldRun =
+              Date.now() - lastRun >= settings.intervalMinutes * 60 * 1000;
           }
-        } else {
-          shouldRun =
-            Date.now() - lastRun >= settings.intervalMinutes * 60 * 1000;
-        }
-        if (shouldRun) {
-          cycleRunning.longterm = true;
-          cycles.push(
-            executeAutoTradeCycle(settings)
-              .then(() => undefined)
-              .catch(() => undefined)
-              .finally(() => {
-                cycleRunning.longterm = false;
-              }),
-          );
+          if (shouldRun) {
+            const lease = await acquireAutoTradeLease(longtermKey);
+            if (lease) {
+              cycleRunning.add(longtermKey);
+              cycles.push(
+                executeAutoTradeCycle(
+                  settings,
+                  userId,
+                  undefined,
+                  undefined,
+                  "longterm",
+                  lease,
+                )
+                  .then(() => undefined)
+                  .catch(() => undefined)
+                  .finally(() => {
+                    cycleRunning.delete(longtermKey);
+                    return lease.release();
+                  }),
+              );
+            }
+          }
         }
       }
 

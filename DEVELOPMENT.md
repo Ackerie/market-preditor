@@ -38,6 +38,8 @@ Create `artifacts/api-server/.env` with at least:
 PORT=8080
 BASE_PATH=/api
 APP_URL=http://localhost:5173
+# Optional comma-separated additional trusted frontend origins
+# CORS_ORIGINS=https://app.example.com,https://admin.example.com
 DATABASE_URL=postgresql://postgres:YOUR_REAL_POSTGRES_PASSWORD@localhost:5432/nexustrade
 SESSION_SECRET=replace-with-a-long-stable-secret
 
@@ -47,6 +49,8 @@ OPENAI_API_KEY=your-openai-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 GEMINI_API_KEY=your-gemini-key
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+# Optional per-user daily AI request limit (default: 500 per provider)
+# AI_DAILY_REQUEST_LIMIT=500
 
 # Optional local-only escape hatch. Leave unset for real-money safety.
 # ALLOW_SIMULATED_TRADING_DATA=true
@@ -63,7 +67,7 @@ PORT=5173
 BASE_PATH=/
 ```
 
-Never commit either `.env` file. Keep `SESSION_SECRET` stable because it is used to decrypt stored broker credentials.
+Never commit either `.env` file. Keep `SESSION_SECRET` stable because it encrypts stored broker and AI credentials. The API encrypts legacy plaintext credential rows before it starts listening; run `pnpm --filter @workspace/api-server run build` followed by `pnpm --filter @workspace/api-server run migrate-credentials` to run that migration manually.
 
 ### 3. Prepare PostgreSQL
 
@@ -171,7 +175,7 @@ All route registration starts at `artifacts/api-server/src/routes/index.ts`.
 ### Database
 
 - `lib/db/src/index.ts`: Drizzle database client and connection pool.
-- `lib/db/src/schema/`: PostgreSQL table definitions.
+- `lib/db/src/schema/`: PostgreSQL table definitions, including per-user auto-trade settings, AI usage, idempotent order requests, and distributed cycle leases.
 - `lib/db/drizzle.config.ts`: Drizzle configuration.
 - `artifacts/api-server/src/lib/autoTradePnl.ts`: realized auto-trade P&L calculations.
 

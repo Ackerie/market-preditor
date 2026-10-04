@@ -7,11 +7,13 @@ import type { AuthUser } from "@workspace/api-zod";
 
 export const SESSION_COOKIE = "sid";
 export const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+export const STEP_UP_TTL = 15 * 60 * 1000;
 const scrypt = promisify(crypto.scrypt);
 
 export interface SessionData {
   user: AuthUser;
   expires_at: number;
+  reauthenticated_at?: number;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -87,4 +89,14 @@ export function getSessionId(req: Request): string | undefined {
     return authHeader.slice(7);
   }
   return req.cookies?.[SESSION_COOKIE];
+}
+
+export async function hasRecentAuthentication(req: Request): Promise<boolean> {
+  const sid = getSessionId(req);
+  if (!sid) return false;
+  const session = await getSession(sid);
+  return Boolean(
+    session?.reauthenticated_at &&
+    Date.now() - session.reauthenticated_at <= STEP_UP_TTL,
+  );
 }

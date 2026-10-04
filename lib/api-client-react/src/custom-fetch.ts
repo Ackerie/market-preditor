@@ -10,6 +10,8 @@ export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
+const ORDER_KEY_RETRY_WINDOW_MS = 5 * 60 * 1000;
+const pendingOrderKeys = new Map<string, { key: string; createdAt: number }>();
 
 // ---------------------------------------------------------------------------
 // Module-level configuration
@@ -48,10 +50,23 @@ function isRequest(input: RequestInfo | URL): input is Request {
   return typeof Request !== "undefined" && input instanceof Request;
 }
 
-function resolveMethod(input: RequestInfo | URL, explicitMethod?: string): string {
+function resolveMethod(
+  input: RequestInfo | URL,
+  explicitMethod?: string,
+): string {
   if (explicitMethod) return explicitMethod.toUpperCase();
   if (isRequest(input)) return input.method.toUpperCase();
   return "GET";
+}
+
+function getBrowserCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = `${encodeURIComponent(name)}=`;
+  const cookie = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null;
 }
 
 // Use loose check for URL — some runtimes (e.g. React Native) polyfill URL
@@ -97,17 +112,19 @@ function getMediaType(headers: Headers): string | null {
 }
 
 function isJsonMediaType(mediaType: string | null): boolean {
-  return mediaType === "application/json" || Boolean(mediaType?.endsWith("+json"));
+  return (
+    mediaType === "application/json" || Boolean(mediaType?.endsWith("+json"))
+  );
 }
 
 function isTextMediaType(mediaType: string | null): boolean {
   return Boolean(
     mediaType &&
-      (mediaType.startsWith("text/") ||
-        mediaType === "application/xml" ||
-        mediaType === "text/xml" ||
-        mediaType.endsWith("+xml") ||
-        mediaType === "application/x-www-form-urlencoded"),
+    (mediaType.startsWith("text/") ||
+      mediaType === "application/xml" ||
+      mediaType === "text/xml" ||
+      mediaType.endsWith("+xml") ||
+      mediaType === "application/x-www-form-urlencoded"),
   );
 }
 
@@ -251,7 +268,10 @@ async function parseJsonBody(
   }
 }
 
-async function parseErrorBody(response: Response, method: string): Promise<unknown> {
+async function parseErrorBody(
+  response: Response,
+  method: string,
+): Promise<unknown> {
   if (hasNoBody(response, method)) {
     return null;
   }
@@ -260,7 +280,9 @@ async function parseErrorBody(response: Response, method: string): Promise<unkno
 
   // Fall back to text when blob() is unavailable (e.g. some React Native builds).
   if (mediaType && !isJsonMediaType(mediaType) && !isTextMediaType(mediaType)) {
-    return typeof response.blob === "function" ? response.blob() : response.text();
+    return typeof response.blob === "function"
+      ? response.blob()
+      : response.text();
   }
 
   const raw = await response.text();
@@ -315,7 +337,7 @@ async function parseSuccessBody(
       if (typeof response.blob !== "function") {
         throw new TypeError(
           "Blob responses are not supported in this runtime. " +
-            "Use responseType \"json\" or \"text\" instead.",
+            'Use responseType "json" or "text" instead.',
         );
       }
       return response.blob();
@@ -335,7 +357,10 @@ export async function customFetch<T = unknown>(
     throw new TypeError(`customFetch: ${method} requests cannot have a body.`);
   }
 
-  const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
+  const headers = mergeHeaders(
+    isRequest(input) ? input.headers : undefined,
+    headersInit,
+  );
 
   if (
     typeof init.body === "string" &&
@@ -358,9 +383,62 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  if (
+    ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
+    !headers.has("x-csrf-token")
+  ) {
+    const csrfToken = getBrowserCookie("XSRF-TOKEN");
+    if (csrfToken) headers.set("x-csrf-token", csrfToken);
+  }
+
+  const requestUrl = resolveUrl(input);
+  let orderKeyCacheKey: string | null = null;
+  let generatedOrderKey: string | null = null;
+  if (
+    method === "POST" &&
+    (requestUrl.endsWith("/api/trades") ||
+      requestUrl.endsWith("/api/broker/orders")) &&
+    !headers.has("idempotency-key")
+  ) {
+    const now = Date.now();
+    for (const [cacheKey, cached] of pendingOrderKeys) {
+      if (now - cached.createdAt > ORDER_KEY_RETRY_WINDOW_MS) {
+        pendingOrderKeys.delete(cacheKey);
+      }
+    }
+    orderKeyCacheKey = `${requestUrl}:${typeof init.body === "string" ? init.body : ""}`;
+    generatedOrderKey =
+      pendingOrderKeys.get(orderKeyCacheKey)?.key ??
+      globalThis.crypto.randomUUID();
+    pendingOrderKeys.set(orderKeyCacheKey, {
+      key: generatedOrderKey,
+      createdAt: now,
+    });
+    headers.set("idempotency-key", generatedOrderKey);
+  }
+
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, method, headers });
+  } catch (error) {
+    throw error;
+  }
+
+  if (
+    orderKeyCacheKey &&
+    generatedOrderKey &&
+    pendingOrderKeys.get(orderKeyCacheKey)?.key === generatedOrderKey &&
+    response.status !== 409 &&
+    response.status < 500
+  ) {
+    pendingOrderKeys.delete(orderKeyCacheKey);
+  }
+
+  if (response.status === 428 && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("nexustrade:step-up-required"));
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

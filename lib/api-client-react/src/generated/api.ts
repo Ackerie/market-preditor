@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AiCredentialStatus,
+  AiCredentialsStatus,
   AuthCredentials,
   AuthUserEnvelope,
   AutoTradeAlerts,
@@ -55,13 +57,12 @@ import type {
   Prediction,
   RequestPasswordResetBody,
   ResetPasswordBody,
+  SaveAiCredentialInput,
   SuccessResponse,
   Trade,
   TradeInput,
   UpdateBrokerAutoTradeInput,
   UpdateNotificationPrefsInput,
-  UpdateProfileInput,
-  UserProfile,
   WatchlistInput,
   WatchlistItem,
 } from "./api.schemas";
@@ -2265,167 +2266,6 @@ export function useLogoutBrowserSession<
 }
 
 /**
- * @summary Get the current user's profile
- */
-export const getGetAccountProfileUrl = () => {
-  return `/api/account/profile`;
-};
-
-export const getAccountProfile = async (
-  options?: RequestInit,
-): Promise<UserProfile> => {
-  return customFetch<UserProfile>(getGetAccountProfileUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetAccountProfileQueryKey = () => {
-  return [`/api/account/profile`] as const;
-};
-
-export const getGetAccountProfileQueryOptions = <
-  TData = Awaited<ReturnType<typeof getAccountProfile>>,
-  TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getAccountProfile>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetAccountProfileQueryKey();
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getAccountProfile>>
-  > = ({ signal }) => getAccountProfile({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getAccountProfile>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetAccountProfileQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getAccountProfile>>
->;
-export type GetAccountProfileQueryError = ErrorType<void>;
-
-/**
- * @summary Get the current user's profile
- */
-
-export function useGetAccountProfile<
-  TData = Awaited<ReturnType<typeof getAccountProfile>>,
-  TError = ErrorType<void>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getAccountProfile>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetAccountProfileQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary Update the current user's profile
- */
-export const getUpdateAccountProfileUrl = () => {
-  return `/api/account/profile`;
-};
-
-export const updateAccountProfile = async (
-  updateProfileInput: UpdateProfileInput,
-  options?: RequestInit,
-): Promise<SuccessResponse> => {
-  return customFetch<SuccessResponse>(getUpdateAccountProfileUrl(), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(updateProfileInput),
-  });
-};
-
-export const getUpdateAccountProfileMutationOptions = <
-  TError = ErrorType<void>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAccountProfile>>,
-    TError,
-    { data: BodyType<UpdateProfileInput> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateAccountProfile>>,
-  TError,
-  { data: BodyType<UpdateProfileInput> },
-  TContext
-> => {
-  const mutationKey = ["updateAccountProfile"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateAccountProfile>>,
-    { data: BodyType<UpdateProfileInput> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return updateAccountProfile(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type UpdateAccountProfileMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateAccountProfile>>
->;
-export type UpdateAccountProfileMutationBody = BodyType<UpdateProfileInput>;
-export type UpdateAccountProfileMutationError = ErrorType<void>;
-
-/**
- * @summary Update the current user's profile
- */
-export const useUpdateAccountProfile = <
-  TError = ErrorType<void>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAccountProfile>>,
-    TError,
-    { data: BodyType<UpdateProfileInput> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof updateAccountProfile>>,
-  TError,
-  { data: BodyType<UpdateProfileInput> },
-  TContext
-> => {
-  return useMutation(getUpdateAccountProfileMutationOptions(options));
-};
-
-/**
  * @summary Get the current user's notification preferences
  */
 export const getGetNotificationPrefsUrl = () => {
@@ -2585,6 +2425,271 @@ export const useUpdateNotificationPrefs = <
   TContext
 > => {
   return useMutation(getUpdateNotificationPrefsMutationOptions(options));
+};
+
+/**
+ * @summary Get the current user's configured AI providers
+ */
+export const getGetAiCredentialsUrl = () => {
+  return `/api/account/ai-credentials`;
+};
+
+export const getAiCredentials = async (
+  options?: RequestInit,
+): Promise<AiCredentialsStatus> => {
+  return customFetch<AiCredentialsStatus>(getGetAiCredentialsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAiCredentialsQueryKey = () => {
+  return [`/api/account/ai-credentials`] as const;
+};
+
+export const getGetAiCredentialsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAiCredentials>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAiCredentials>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAiCredentialsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAiCredentials>>
+  > = ({ signal }) => getAiCredentials({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAiCredentials>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAiCredentialsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAiCredentials>>
+>;
+export type GetAiCredentialsQueryError = ErrorType<void>;
+
+/**
+ * @summary Get the current user's configured AI providers
+ */
+
+export function useGetAiCredentials<
+  TData = Awaited<ReturnType<typeof getAiCredentials>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAiCredentials>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAiCredentialsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace one personal AI provider API key
+ */
+export const getSaveAiCredentialUrl = (
+  provider: "anthropic" | "openai" | "gemini",
+) => {
+  return `/api/account/ai-credentials/${provider}`;
+};
+
+export const saveAiCredential = async (
+  provider: "anthropic" | "openai" | "gemini",
+  saveAiCredentialInput: SaveAiCredentialInput,
+  options?: RequestInit,
+): Promise<AiCredentialStatus> => {
+  return customFetch<AiCredentialStatus>(getSaveAiCredentialUrl(provider), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveAiCredentialInput),
+  });
+};
+
+export const getSaveAiCredentialMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveAiCredential>>,
+    TError,
+    {
+      provider: "anthropic" | "openai" | "gemini";
+      data: BodyType<SaveAiCredentialInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveAiCredential>>,
+  TError,
+  {
+    provider: "anthropic" | "openai" | "gemini";
+    data: BodyType<SaveAiCredentialInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["saveAiCredential"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveAiCredential>>,
+    {
+      provider: "anthropic" | "openai" | "gemini";
+      data: BodyType<SaveAiCredentialInput>;
+    }
+  > = (props) => {
+    const { provider, data } = props ?? {};
+
+    return saveAiCredential(provider, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveAiCredentialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveAiCredential>>
+>;
+export type SaveAiCredentialMutationBody = BodyType<SaveAiCredentialInput>;
+export type SaveAiCredentialMutationError = ErrorType<void>;
+
+/**
+ * @summary Replace one personal AI provider API key
+ */
+export const useSaveAiCredential = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveAiCredential>>,
+    TError,
+    {
+      provider: "anthropic" | "openai" | "gemini";
+      data: BodyType<SaveAiCredentialInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveAiCredential>>,
+  TError,
+  {
+    provider: "anthropic" | "openai" | "gemini";
+    data: BodyType<SaveAiCredentialInput>;
+  },
+  TContext
+> => {
+  return useMutation(getSaveAiCredentialMutationOptions(options));
+};
+
+/**
+ * @summary Delete one personal AI provider API key
+ */
+export const getDeleteAiCredentialUrl = (
+  provider: "anthropic" | "openai" | "gemini",
+) => {
+  return `/api/account/ai-credentials/${provider}`;
+};
+
+export const deleteAiCredential = async (
+  provider: "anthropic" | "openai" | "gemini",
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getDeleteAiCredentialUrl(provider), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAiCredentialMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAiCredential>>,
+    TError,
+    { provider: "anthropic" | "openai" | "gemini" },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAiCredential>>,
+  TError,
+  { provider: "anthropic" | "openai" | "gemini" },
+  TContext
+> => {
+  const mutationKey = ["deleteAiCredential"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAiCredential>>,
+    { provider: "anthropic" | "openai" | "gemini" }
+  > = (props) => {
+    const { provider } = props ?? {};
+
+    return deleteAiCredential(provider, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAiCredentialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAiCredential>>
+>;
+
+export type DeleteAiCredentialMutationError = ErrorType<void>;
+
+/**
+ * @summary Delete one personal AI provider API key
+ */
+export const useDeleteAiCredential = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAiCredential>>,
+    TError,
+    { provider: "anthropic" | "openai" | "gemini" },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAiCredential>>,
+  TError,
+  { provider: "anthropic" | "openai" | "gemini" },
+  TContext
+> => {
+  return useMutation(getDeleteAiCredentialMutationOptions(options));
 };
 
 /**

@@ -36,6 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { csrfFetch } from "@/lib/csrf-fetch";
 import {
   Play,
   StopCircle,
@@ -392,7 +393,7 @@ function LogEntry({ log }: { log: any }) {
           {log.logoUrl ? (
             <img
               src={log.logoUrl}
-              alt={log.symbol}
+              alt={`${log.symbol} logo`}
               className="w-full h-full object-contain"
             />
           ) : (
@@ -521,7 +522,7 @@ function RunProgress({
                     {r.logoUrl ? (
                       <img
                         src={r.logoUrl}
-                        alt={r.symbol}
+                        alt={`${r.symbol} logo`}
                         className="w-full h-full object-contain"
                       />
                     ) : (
@@ -689,7 +690,7 @@ export default function AutoTrade() {
       scheduledTime: runMode === "scheduled" ? scheduledTime : null,
       assetClasses: assetClasses.join(","),
     };
-    fetch("/api/auto-trade/settings", {
+    csrfFetch("/api/auto-trade/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -723,7 +724,7 @@ export default function AutoTrade() {
     esRef.current = null;
     setIsRunning(false);
     setRunCurrentSymbol(null);
-    fetch("/api/auto-trade/settings", {
+    csrfFetch("/api/auto-trade/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -755,7 +756,7 @@ export default function AutoTrade() {
     // independent). Check first so we can show a clear message instead of a
     // generic connection error when the long-term bot is already busy.
     try {
-      const statusResp = await fetch("/api/auto-trade/run-status");
+      const statusResp = await csrfFetch("/api/auto-trade/run-status");
       if (statusResp.ok) {
         const status = await statusResp.json();
         if (status.longtermRunning) {
@@ -786,7 +787,7 @@ export default function AutoTrade() {
         return;
       }
       try {
-        const resp = await fetch("/api/auto-trade/settings", {
+        const resp = await csrfFetch("/api/auto-trade/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -925,7 +926,7 @@ export default function AutoTrade() {
       es.close();
       esRef.current = null;
       try {
-        const statusResp = await fetch("/api/auto-trade/run-status");
+        const statusResp = await csrfFetch("/api/auto-trade/run-status");
         if (statusResp.ok) {
           const status = await statusResp.json();
           if (status.longtermRunning) {

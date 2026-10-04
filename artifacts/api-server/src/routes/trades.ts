@@ -6,8 +6,15 @@ import {
   resolveBrokerRoute,
   resolveConnectedBrokerRoute,
 } from "../lib/brokerRouting";
+import {
+  beginOrderRequest,
+  completeOrderRequest,
+  hashOrderRequest,
+  isValidIdempotencyKey,
+} from "../lib/orderIdempotency";
 
 const router: IRouter = Router();
+const MAX_MANUAL_ORDER_USD = 10_000;
 
 router.get("/trades", async (req: Request, res: Response) => {
   if (!req.isAuthenticated()) {
@@ -50,6 +57,12 @@ router.post("/trades", async (req: Request, res: Response) => {
     return;
   }
   const { symbol, side, notional } = parsed.data;
+  if (notional > MAX_MANUAL_ORDER_USD) {
+    res.status(400).json({
+      error: `Manual orders are limited to $${MAX_MANUAL_ORDER_USD.toLocaleString()} per order`,
+    });
+    return;
+  }
   const coin = getCoinBySymbol(symbol);
   if (!coin) {
     res.status(400).json({ error: "Unknown symbol" });
@@ -93,6 +106,78 @@ router.post("/trades", async (req: Request, res: Response) => {
       return;
     }
 
+    const minimum =
+      adapter.minOrderNotionalUsd?.(route.effectiveAssetType) ?? 1;
+    if (notional < minimum) {
+      res.status(400).json({
+        error: `This broker requires a minimum order of $${minimum.toFixed(2)} for this asset`,
+      });
+      return;
+    }
+
+    if (side === "buy") {
+      const availableCash = await adapter.getAvailableCashUsd(
+        connection.creds,
+        route.effectiveAssetType,
+      );
+      if (availableCash == null) {
+        res
+          .status(400)
+          .json({ error: "Unable to verify available buying power" });
+        return;
+      }
+      if (notional > availableCash) {
+        res.status(400).json({
+          error: `Order exceeds available buying power of $${availableCash.toFixed(2)}`,
+        });
+        return;
+      }
+    } else {
+      const position = await adapter.getSellablePosition(
+        connection.creds,
+        route.brokerSymbol,
+        route.effectiveAssetType,
+      );
+      if (!position || position.marketValueUsd <= 0) {
+        res
+          .status(400)
+          .json({ error: "No sellable position is available for this asset" });
+        return;
+      }
+      if (notional > position.marketValueUsd) {
+        res.status(400).json({
+          error: `Order exceeds the sellable position value of $${position.marketValueUsd.toFixed(2)}`,
+        });
+        return;
+      }
+    }
+
+    const idempotencyKey = req.get("idempotency-key");
+    if (!isValidIdempotencyKey(idempotencyKey)) {
+      res
+        .status(400)
+        .json({ error: "A valid Idempotency-Key header is required" });
+      return;
+    }
+    const idempotency = await beginOrderRequest(
+      userId,
+      idempotencyKey,
+      hashOrderRequest({ symbol, side, notional, broker: adapter.id }),
+    );
+    if (idempotency.kind === "replay") {
+      res.status(idempotency.status).json(idempotency.body);
+      return;
+    }
+    if (idempotency.kind !== "started") {
+      res
+        .status(409)
+        .json({
+          error:
+            "Order request is already processing or the key was reused for a different order",
+        });
+      return;
+    }
+
     const result = await adapter.placeMarketOrder(connection.creds, {
       brokerSymbol: route.brokerSymbol,
       side,
@@ -108,10 +193,12 @@ router.post("/trades", async (req: Request, res: Response) => {
         },
         "Broker order rejected",
       );
-      res.status(400).json({
+      const body = {
         error:
           result.rejectReason ?? `${adapter.displayName} rejected the order`,
-      });
+      };
+      await completeOrderRequest(userId, idempotencyKey, 400, body);
+      res.status(400).json(body);
       return;
     }
 
@@ -119,7 +206,7 @@ router.post("/trades", async (req: Request, res: Response) => {
       { symbol, side, notional, broker: adapter.id },
       "Real-money trade placed",
     );
-    res.status(201).json({
+    const responseBody = {
       id: `${adapter.id}-${result.orderId || Date.now()}`,
       symbol,
       name: coin.name,
@@ -131,7 +218,9 @@ router.post("/trades", async (req: Request, res: Response) => {
       logoUrl: coin.logoUrl,
       broker: adapter.id,
       status: result.orderStatus ?? "accepted",
-    });
+    };
+    await completeOrderRequest(userId, idempotencyKey, 201, responseBody);
+    res.status(201).json(responseBody);
   } catch (err) {
     req.log.error({ err }, "Failed to execute trade");
     res.status(500).json({ error: "Failed to execute trade" });

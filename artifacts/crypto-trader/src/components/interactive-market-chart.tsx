@@ -11,6 +11,10 @@ interface InteractiveMarketChartProps {
   symbol: string;
   height?: number;
   compact?: boolean;
+  chartMode?: "candles" | "line";
+  showCrosshair?: boolean;
+  showIndicators?: boolean;
+  showLevels?: boolean;
 }
 
 interface ChartCandle {
@@ -22,13 +26,20 @@ interface ChartCandle {
   volume: number;
 }
 
-const TIMEFRAMES: Array<{ value: MarketChartTimeframe; label: string; groupSize: number }> = [
+const TIMEFRAMES: Array<{
+  value: MarketChartTimeframe;
+  label: string;
+  groupSize: number;
+}> = [
   { value: "5m", label: "5m", groupSize: 1 },
   { value: "15m", label: "15m", groupSize: 3 },
   { value: "1h", label: "1h", groupSize: 12 },
 ];
 
-function aggregateCandles(candles: ChartCandle[], groupSize: number): ChartCandle[] {
+function aggregateCandles(
+  candles: ChartCandle[],
+  groupSize: number,
+): ChartCandle[] {
   if (groupSize === 1) return candles;
   const grouped: ChartCandle[] = [];
   for (let index = 0; index < candles.length; index += groupSize) {
@@ -49,13 +60,21 @@ function aggregateCandles(candles: ChartCandle[], groupSize: number): ChartCandl
 }
 
 function formatPrice(value: number): string {
-  return value < 1 ? value.toFixed(5) : value < 10 ? value.toFixed(4) : value.toFixed(2);
+  return value < 1
+    ? value.toFixed(5)
+    : value < 10
+      ? value.toFixed(4)
+      : value.toFixed(2);
 }
 
 export function InteractiveMarketChart({
   symbol,
   height = 360,
   compact = false,
+  chartMode = "candles",
+  showCrosshair = true,
+  showIndicators = false,
+  showLevels = true,
 }: InteractiveMarketChartProps) {
   const [timeframe, setTimeframe] = useState<MarketChartTimeframe>("5m");
   const { data, isLoading, isError } = useGetAutoTradeCandles(symbol, {
@@ -74,27 +93,53 @@ export function InteractiveMarketChart({
       high: candle.high,
       low: candle.low,
       close: candle.close,
-      volume: "volume" in candle && typeof candle.volume === "number" ? candle.volume : 0,
+      volume:
+        "volume" in candle && typeof candle.volume === "number"
+          ? candle.volume
+          : 0,
     }));
-    const selected = TIMEFRAMES.find((item) => item.value === timeframe) ?? TIMEFRAMES[0];
+    const selected =
+      TIMEFRAMES.find((item) => item.value === timeframe) ?? TIMEFRAMES[0];
     return aggregateCandles(normalized, selected.groupSize);
   }, [data, timeframe]);
 
-  const windowHigh = candles.length ? Math.max(...candles.map((candle) => candle.high)) : 0;
-  const windowLow = candles.length ? Math.min(...candles.map((candle) => candle.low)) : 0;
+  const windowHigh = candles.length
+    ? Math.max(...candles.map((candle) => candle.high))
+    : 0;
+  const windowLow = candles.length
+    ? Math.min(...candles.map((candle) => candle.low))
+    : 0;
   const latest = candles.at(-1);
 
   if (isLoading && !data) {
-    return <div className="flex items-center justify-center text-xs text-muted-foreground" style={{ height }}>Loading live candles...</div>;
+    return (
+      <div
+        className="flex items-center justify-center text-xs text-muted-foreground"
+        style={{ height }}
+      >
+        Loading live candles...
+      </div>
+    );
   }
   if (isError || !latest) {
-    return <div className="flex items-center justify-center text-xs text-muted-foreground" style={{ height }}>Live chart unavailable.</div>;
+    return (
+      <div
+        className="flex items-center justify-center text-xs text-muted-foreground"
+        style={{ height }}
+      >
+        Live chart unavailable.
+      </div>
+    );
   }
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 pt-2">
-        <div className="flex items-center gap-1" role="group" aria-label="Chart timeframe">
+        <div
+          className="flex items-center gap-1"
+          role="group"
+          aria-label="Chart timeframe"
+        >
           {TIMEFRAMES.map((item) => (
             <button
               key={item.value}
@@ -124,6 +169,10 @@ export function InteractiveMarketChart({
           { label: "HIGH", price: windowHigh, color: "#22c55e" },
           { label: "LOW", price: windowLow, color: "#ef4444" },
         ]}
+        chartMode={chartMode}
+        showCrosshair={showCrosshair}
+        showIndicators={showIndicators}
+        showLevels={showLevels}
       />
       {!compact && (
         <div className="grid grid-cols-3 gap-2 border-t border-border px-3 pt-2 text-[10px] font-mono">
@@ -137,7 +186,9 @@ export function InteractiveMarketChart({
           </div>
           <div>
             <span className="text-muted-foreground">Range</span>
-            <div>{formatPrice(latest.low)} - {formatPrice(latest.high)}</div>
+            <div>
+              {formatPrice(latest.low)} - {formatPrice(latest.high)}
+            </div>
           </div>
         </div>
       )}

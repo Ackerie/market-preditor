@@ -58,7 +58,8 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root, .dark {
+:root,
+.dark {
   --background: 220 30% 6%;
   --foreground: 210 40% 98%;
   --card: 220 30% 9%;
@@ -83,7 +84,7 @@
   --chart-3: 350 80% 60%;
   --chart-4: 45 100% 50%;
   --chart-5: 280 80% 60%;
-  
+
   --sidebar: 220 30% 6%;
   --sidebar-foreground: 210 40% 98%;
   --sidebar-border: 220 20% 16%;
@@ -94,20 +95,30 @@
   --sidebar-ring: 190 90% 50%;
 
   --radius: 0.5rem;
-  --app-font-sans: 'Inter', sans-serif;
-  --app-font-mono: 'JetBrains Mono', monospace;
+  --app-font-sans: "Inter", sans-serif;
+  --app-font-mono: "JetBrains Mono", monospace;
 }
 
 @layer base {
   * {
     @apply border-border;
   }
+
+  :focus-visible {
+    outline: 3px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
 }
 
 @keyframes ticker {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
 }

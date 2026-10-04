@@ -15,6 +15,31 @@ export interface UpdateNotificationPrefsInput {
   autoTradeEmailAlerts: boolean;
 }
 
+export type AiCredentialStatusProvider =
+  (typeof AiCredentialStatusProvider)[keyof typeof AiCredentialStatusProvider];
+
+export const AiCredentialStatusProvider = {
+  anthropic: "anthropic",
+  openai: "openai",
+  gemini: "gemini",
+} as const;
+
+export interface AiCredentialStatus {
+  provider: AiCredentialStatusProvider;
+  configured: boolean;
+  /** @nullable */
+  maskedKey: string | null;
+}
+
+export interface AiCredentialsStatus {
+  providers: AiCredentialStatus[];
+}
+
+export interface SaveAiCredentialInput {
+  /** @minLength 10 */
+  apiKey: string;
+}
+
 export type ConnectBrokerInputMode =
   (typeof ConnectBrokerInputMode)[keyof typeof ConnectBrokerInputMode];
 
@@ -646,42 +671,6 @@ export interface ErrorEnvelope {
 
 export interface SuccessResponse {
   success: boolean;
-}
-
-export interface UserProfile {
-  id: string;
-  /** @nullable */
-  email: string | null;
-  /** @nullable */
-  firstName: string | null;
-  /** @nullable */
-  lastName: string | null;
-  /** @nullable */
-  profileImageUrl: string | null;
-  /** @nullable */
-  phone?: string | null;
-  /** @nullable */
-  dateOfBirth?: string | null;
-  /** @nullable */
-  address?: string | null;
-  /** @nullable */
-  city?: string | null;
-  /** @nullable */
-  state?: string | null;
-  /** @nullable */
-  country?: string | null;
-  /** @nullable */
-  postalCode?: string | null;
-}
-
-export interface UpdateProfileInput {
-  phone?: string;
-  dateOfBirth?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-  postalCode?: string;
 }
 
 /**

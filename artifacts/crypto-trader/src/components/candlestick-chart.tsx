@@ -17,6 +17,10 @@ interface CandlestickChartProps {
   height?: number;
   levels?: Array<{ label: string; price: number; color: string }>;
   markers?: Array<{ index: number; price: number; side: "buy" | "sell" }>;
+  chartMode?: "candles" | "line";
+  showCrosshair?: boolean;
+  showIndicators?: boolean;
+  showLevels?: boolean;
 }
 
 const MARGIN = { top: 8, right: 76, bottom: 36, left: 0 };
@@ -39,6 +43,10 @@ export function CandlestickChart({
   height = 420,
   levels = [],
   markers = [],
+  chartMode = "candles",
+  showCrosshair = true,
+  showIndicators = false,
+  showLevels = true,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -81,6 +89,18 @@ export function CandlestickChart({
   const slotW = chartW / n;
   const bodyW = Math.max(1.5, Math.min(14, slotW * 0.65));
   const candleX = (i: number) => slotW * i + slotW / 2;
+  const closePoints = candles
+    .map((candle, index) => `${candleX(index)},${priceToY(candle.close)}`)
+    .join(" ");
+  const indicatorPoints = candles
+    .map((_, index) => {
+      const start = Math.max(0, index - 19);
+      const window = candles.slice(start, index + 1);
+      const average =
+        window.reduce((sum, candle) => sum + candle.close, 0) / window.length;
+      return `${candleX(index)},${priceToY(average)}`;
+    })
+    .join(" ");
 
   const numTicks = 6;
   const priceTicks: number[] = [];
@@ -139,50 +159,71 @@ export function CandlestickChart({
           })}
 
           {/* Candle bodies + wicks */}
-          <g clipPath="url(#candle-clip)">
-            {candles.map((c, i) => {
-              const cx = candleX(i);
-              const isUp = c.close >= c.open;
-              const upColor = "#22c55e";
-              const downColor = "#ef4444";
-              const color = isUp ? upColor : downColor;
-              const bodyTop = priceToY(Math.max(c.open, c.close));
-              const bodyBot = priceToY(Math.min(c.open, c.close));
-              const bodyH = Math.max(1, bodyBot - bodyTop);
-              const wickTop = priceToY(c.high);
-              const wickBot = priceToY(c.low);
-              const isHov = hovered === i;
-              const dimmed = hovered !== null && !isHov;
-              return (
-                <g key={i} opacity={dimmed ? 0.4 : 1}>
-                  {/* High-to-low wick */}
-                  <line
-                    x1={cx}
-                    x2={cx}
-                    y1={wickTop}
-                    y2={wickBot}
-                    stroke={color}
-                    strokeWidth={1.5}
-                  />
-                  {/* Open-to-close body */}
-                  <rect
-                    x={cx - bodyW / 2}
-                    y={bodyTop}
-                    width={bodyW}
-                    height={bodyH}
-                    fill={isUp ? color : color}
-                    fillOpacity={isUp ? 0.8 : 0.95}
-                    stroke={color}
-                    strokeWidth={0.5}
-                    rx={1}
-                  />
-                </g>
-              );
-            })}
-          </g>
+          {chartMode === "candles" ? (
+            <g clipPath="url(#candle-clip)">
+              {candles.map((c, i) => {
+                const cx = candleX(i);
+                const isUp = c.close >= c.open;
+                const upColor = "#22c55e";
+                const downColor = "#ef4444";
+                const color = isUp ? upColor : downColor;
+                const bodyTop = priceToY(Math.max(c.open, c.close));
+                const bodyBot = priceToY(Math.min(c.open, c.close));
+                const bodyH = Math.max(1, bodyBot - bodyTop);
+                const wickTop = priceToY(c.high);
+                const wickBot = priceToY(c.low);
+                const isHov = hovered === i;
+                const dimmed = hovered !== null && !isHov;
+                return (
+                  <g key={i} opacity={dimmed ? 0.4 : 1}>
+                    {/* High-to-low wick */}
+                    <line
+                      x1={cx}
+                      x2={cx}
+                      y1={wickTop}
+                      y2={wickBot}
+                      stroke={color}
+                      strokeWidth={1.5}
+                    />
+                    {/* Open-to-close body */}
+                    <rect
+                      x={cx - bodyW / 2}
+                      y={bodyTop}
+                      width={bodyW}
+                      height={bodyH}
+                      fill={isUp ? color : color}
+                      fillOpacity={isUp ? 0.8 : 0.95}
+                      stroke={color}
+                      strokeWidth={0.5}
+                      rx={1}
+                    />
+                  </g>
+                );
+              })}
+            </g>
+          ) : (
+            <polyline
+              points={closePoints}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              clipPath="url(#candle-clip)"
+            />
+          )}
+
+          {showIndicators && (
+            <polyline
+              points={indicatorPoints}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              clipPath="url(#candle-clip)"
+            />
+          )}
 
           {/* Hover price line */}
-          {hovered !== null && hCandle && (
+          {showCrosshair && hovered !== null && hCandle && (
             <line
               x1={0}
               x2={chartW}
@@ -196,42 +237,43 @@ export function CandlestickChart({
           )}
 
           {/* Optional position levels and executed trade markers. */}
-          {levels.map((level) => {
-            if (level.price < yMin || level.price > yMax) return null;
-            const y = priceToY(level.price);
-            return (
-              <g key={level.label} pointerEvents="none">
-                <line
-                  x1={0}
-                  x2={chartW}
-                  y1={y}
-                  y2={y}
-                  stroke={level.color}
-                  strokeWidth={1.5}
-                  strokeDasharray="6 4"
-                />
-                <rect
-                  x={chartW - 66}
-                  y={y - 9}
-                  width={64}
-                  height={18}
-                  rx={3}
-                  fill={level.color}
-                  fillOpacity={0.16}
-                />
-                <text
-                  x={chartW - 6}
-                  y={y + 3}
-                  fill={level.color}
-                  fontSize={9}
-                  textAnchor="end"
-                  fontFamily="ui-monospace, monospace"
-                >
-                  {level.label}
-                </text>
-              </g>
-            );
-          })}
+          {showLevels &&
+            levels.map((level) => {
+              if (level.price < yMin || level.price > yMax) return null;
+              const y = priceToY(level.price);
+              return (
+                <g key={level.label} pointerEvents="none">
+                  <line
+                    x1={0}
+                    x2={chartW}
+                    y1={y}
+                    y2={y}
+                    stroke={level.color}
+                    strokeWidth={1.5}
+                    strokeDasharray="6 4"
+                  />
+                  <rect
+                    x={chartW - 66}
+                    y={y - 9}
+                    width={64}
+                    height={18}
+                    rx={3}
+                    fill={level.color}
+                    fillOpacity={0.16}
+                  />
+                  <text
+                    x={chartW - 6}
+                    y={y + 3}
+                    fill={level.color}
+                    fontSize={9}
+                    textAnchor="end"
+                    fontFamily="ui-monospace, monospace"
+                  >
+                    {level.label}
+                  </text>
+                </g>
+              );
+            })}
 
           {markers.map((marker, index) => {
             const candle = candles[marker.index];
@@ -283,7 +325,7 @@ export function CandlestickChart({
           </g>
 
           {/* Vertical crosshair */}
-          {hovX !== null && (
+          {showCrosshair && hovX !== null && (
             <line
               x1={hovX}
               x2={hovX}

@@ -12,10 +12,13 @@ import { sendEmail } from "../lib/resendMail";
 import {
   clearSession,
   createSession,
+  getSession,
   getSessionId,
   hashPassword,
   SESSION_COOKIE,
   SESSION_TTL,
+  STEP_UP_TTL,
+  updateSession,
   verifyPassword,
 } from "../lib/auth";
 
@@ -33,7 +36,7 @@ export function getCookieOptions(req: Request) {
   return {
     httpOnly: true,
     secure: proto === "https",
-    sameSite: "lax" as const,
+    sameSite: "strict" as const,
     path: "/",
   };
 }
@@ -76,6 +79,7 @@ async function startSession(
       profileImageUrl: user.profileImageUrl,
     },
     expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL / 1000,
+    reauthenticated_at: Date.now(),
   });
   setSessionCookie(req, res, sid);
 }
@@ -171,6 +175,34 @@ router.post("/auth/logout", async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+router.post("/auth/reauthenticate", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const password =
+    typeof req.body?.password === "string" ? req.body.password : "";
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, req.user!.id));
+  if (
+    !user?.passwordHash ||
+    !(await verifyPassword(password, user.passwordHash))
+  ) {
+    res.status(401).json({ error: "Invalid password" });
+    return;
+  }
+  const sid = getSessionId(req);
+  if (sid) {
+    const session = await getSession(sid);
+    if (session) {
+      await updateSession(sid, { ...session, reauthenticated_at: Date.now() });
+    }
+  }
+  res.json({ success: true, validForMs: STEP_UP_TTL });
+});
+
 router.post("/auth/forgot-password", async (req: Request, res: Response) => {
   const email =
     typeof req.body?.email === "string"
@@ -205,14 +237,28 @@ router.post("/auth/forgot-password", async (req: Request, res: Response) => {
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
   });
 
-  const origin = process.env.APP_URL ?? `${req.protocol}://${req.get("host")}`;
-  const resetUrl = `${origin}/reset-password?token=${rawToken}`;
-  await sendEmail({
+  const configuredAppUrl = process.env.APP_URL;
+  if (process.env.NODE_ENV === "production" && !configuredAppUrl) {
+    await db
+      .delete(passwordResetTokensTable)
+      .where(eq(passwordResetTokensTable.userId, user.id));
+    res.json(genericResponse);
+    return;
+  }
+  const origin = configuredAppUrl ?? `${req.protocol}://${req.get("host")}`;
+  const resetUrl = `${origin.replace(/\/$/, "")}/reset-password#token=${encodeURIComponent(rawToken)}`;
+  const sent = await sendEmail({
     to: user.email,
     subject: "Reset your NexusTrade password",
     text: `Reset your NexusTrade password using this link: ${resetUrl}\n\nThis link expires in one hour.`,
     html: `<p>Reset your NexusTrade password by clicking the link below.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in one hour.</p>`,
   });
+
+  if (!sent) {
+    await db
+      .delete(passwordResetTokensTable)
+      .where(eq(passwordResetTokensTable.userId, user.id));
+  }
 
   res.json(genericResponse);
 });
@@ -226,12 +272,9 @@ router.post("/auth/reset-password", async (req: Request, res: Response) => {
       ? req.body.confirmPassword
       : "";
   if (!token || password.length < 8) {
-    res
-      .status(400)
-      .json({
-        error:
-          "A reset token and password of at least 8 characters are required",
-      });
+    res.status(400).json({
+      error: "A reset token and password of at least 8 characters are required",
+    });
     return;
   }
   if (password !== confirmPassword) {
@@ -240,34 +283,38 @@ router.post("/auth/reset-password", async (req: Request, res: Response) => {
   }
 
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const [resetToken] = await db
-    .select()
-    .from(passwordResetTokensTable)
-    .where(
-      and(
-        eq(passwordResetTokensTable.tokenHash, tokenHash),
-        isNull(passwordResetTokensTable.usedAt),
-        gt(passwordResetTokensTable.expiresAt, new Date()),
-      ),
-    );
-  if (!resetToken) {
-    res.status(400).json({ error: "This reset link is invalid or expired" });
-    return;
-  }
-
-  await db.transaction(async (transaction) => {
-    await transaction
-      .update(usersTable)
-      .set({ passwordHash: await hashPassword(password) })
-      .where(eq(usersTable.id, resetToken.userId));
-    await transaction
+  const passwordHash = await hashPassword(password);
+  const consumed = await db.transaction(async (transaction) => {
+    const [resetToken] = await transaction
       .update(passwordResetTokensTable)
       .set({ usedAt: new Date() })
-      .where(eq(passwordResetTokensTable.id, resetToken.id));
+      .where(
+        and(
+          eq(passwordResetTokensTable.tokenHash, tokenHash),
+          isNull(passwordResetTokensTable.usedAt),
+          gt(passwordResetTokensTable.expiresAt, new Date()),
+        ),
+      )
+      .returning({
+        id: passwordResetTokensTable.id,
+        userId: passwordResetTokensTable.userId,
+      });
+    if (!resetToken) return false;
+
+    await transaction
+      .update(usersTable)
+      .set({ passwordHash })
+      .where(eq(usersTable.id, resetToken.userId));
     await transaction
       .delete(sessionsTable)
       .where(sql`${sessionsTable.sess}->'user'->>'id' = ${resetToken.userId}`);
+    return true;
   });
+
+  if (!consumed) {
+    res.status(400).json({ error: "This reset link is invalid or expired" });
+    return;
+  }
 
   res.json({ message: "Password reset successfully" });
 });

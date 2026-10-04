@@ -19,6 +19,7 @@ import {
   Plus,
   Radio,
   Search,
+  X,
   Settings2,
   SlidersHorizontal,
 } from "lucide-react";
@@ -44,9 +45,18 @@ function shortVolume(value: number) {
 }
 
 export default function LiveUpdates() {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [selectedSymbol, setSelectedSymbol] = useState("");
   const [search, setSearch] = useState("");
   const [market, setMarket] = useState("All markets");
+  const [isPaused, setIsPaused] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [chartMode, setChartMode] = useState<"candles" | "line">("candles");
+  const [showCrosshair, setShowCrosshair] = useState(true);
+  const [showIndicators, setShowIndicators] = useState(false);
+  const [showLevels, setShowLevels] = useState(true);
   const [flashes, setFlashes] = useState<Record<string, FlashDir>>({});
   const [events, setEvents] = useState<PriceEvent[]>([]);
   const prevPrices = useRef<Record<string, number>>({});
@@ -55,7 +65,7 @@ export default function LiveUpdates() {
   const { data: coins } = useListCoins(undefined, {
     query: {
       queryKey: getListCoinsQueryKey(),
-      refetchInterval: 2000,
+      refetchInterval: isPaused ? false : 2000,
     },
   });
   const selectedCoin =
@@ -65,7 +75,7 @@ export default function LiveUpdates() {
     query: {
       enabled: !!activeSymbol,
       queryKey: getGetCoinQueryKey(activeSymbol),
-      refetchInterval: 5000,
+      refetchInterval: isPaused ? false : 5000,
     },
   });
 
@@ -73,12 +83,13 @@ export default function LiveUpdates() {
     if (selectedCoin && !selectedSymbol) setSelectedSymbol(selectedCoin.symbol);
   }, [selectedCoin, selectedSymbol]);
   useEffect(() => {
+    if (isPaused) return;
     const id = setInterval(
       () => queryClient.invalidateQueries({ queryKey: getListCoinsQueryKey() }),
       2000,
     );
     return () => clearInterval(id);
-  }, [queryClient]);
+  }, [isPaused, queryClient]);
 
   const handleFlash = useCallback((symbol: string, dir: FlashDir) => {
     if (flashTimers.current[symbol]) clearTimeout(flashTimers.current[symbol]);
@@ -87,6 +98,14 @@ export default function LiveUpdates() {
       () => setFlashes((previous) => ({ ...previous, [symbol]: null })),
       900,
     );
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreen = () =>
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreen);
   }, []);
 
   useEffect(() => {
@@ -115,9 +134,20 @@ export default function LiveUpdates() {
       }
       prevPrices.current[coin.symbol] = coin.price;
     });
-    if (newEvents.length)
+    if (newEvents.length) {
       setEvents((previous) => [...newEvents, ...previous].slice(0, 30));
-  }, [coins, handleFlash]);
+      if (
+        notificationsEnabled &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        const event = newEvents[0];
+        new Notification(`${event.symbol} price move`, {
+          body: `${event.name} moved ${event.dir === "up" ? "up" : "down"} ${Math.abs(event.pct).toFixed(3)}%.`,
+        });
+      }
+    }
+  }, [coins, handleFlash, notificationsEnabled]);
 
   const visibleCoins = (coins ?? []).filter((coin) => {
     const matchesMarket =
@@ -137,8 +167,11 @@ export default function LiveUpdates() {
   const isUp = (selectedCoin?.change24h ?? 0) >= 0;
 
   return (
-    <div className="space-y-3 pb-16 text-[13px]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+    <div
+      ref={containerRef}
+      className="space-y-3 bg-background pb-16 text-[13px]"
+    >
+      <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-foreground">
             <Radio className="h-4 w-4 animate-pulse text-emerald-400" />
@@ -151,18 +184,49 @@ export default function LiveUpdates() {
           </span>
         </div>
         <div className="flex items-center gap-1 text-muted-foreground">
-          <IconButton label="Alerts">
+          <IconButton
+            label={notificationsEnabled ? "Disable alerts" : "Enable alerts"}
+            onClick={async () => {
+              if (!("Notification" in window)) return;
+              const permission = await Notification.requestPermission();
+              setNotificationsEnabled(permission === "granted");
+            }}
+          >
             <Bell className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Settings">
+          <IconButton
+            label="Settings"
+            onClick={() => setSettingsOpen((open) => !open)}
+          >
             <Settings2 className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Fullscreen">
+          <IconButton
+            label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            onClick={async () => {
+              if (document.fullscreenElement) await document.exitFullscreen();
+              else await containerRef.current?.requestFullscreen();
+            }}
+          >
             <Maximize2 className="h-4 w-4" />
           </IconButton>
         </div>
+        {settingsOpen && (
+          <div className="absolute right-4 top-14 z-20 w-56 rounded-md border border-border bg-card p-3 shadow-xl">
+            <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+              <span>Pause live updates</span>
+              <input
+                type="checkbox"
+                checked={isPaused}
+                onChange={(event) => setIsPaused(event.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+            </label>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Price refreshes every 2 seconds when updates are active.
+            </p>
+          </div>
+        )}
       </div>
-
       <div className="flex gap-1 overflow-hidden border-y border-border bg-card/60 py-2">
         {movers.map((coin) => (
           <button
@@ -192,20 +256,50 @@ export default function LiveUpdates() {
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Watchlist
             </span>
-            <Plus className="h-4 w-4 text-muted-foreground" />
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setMarket("All markets");
+              }}
+              aria-label="Reset watchlist filters"
+              title="Reset watchlist filters"
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
           <div className="border-b border-border p-2">
             <div className="flex items-center gap-2 bg-muted/50 px-2 py-1.5 text-muted-foreground">
               <Search className="h-3.5 w-3.5" />
               <input
+                aria-label="Search watchlist symbols"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search symbol"
                 className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear watchlist search"
+                  title="Clear watchlist search"
+                  className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <div className="mt-2 flex items-center gap-1 overflow-x-auto">
-              {["All markets", "Crypto", "Stock", "Forex"].map((item) => (
+              {[
+                "All markets",
+                "Crypto",
+                "Stock",
+                "Forex",
+                "Futures",
+                "Commodity",
+              ].map((item) => (
                 <button
                   key={item}
                   onClick={() => setMarket(item)}
@@ -321,26 +415,65 @@ export default function LiveUpdates() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
                 <div className="flex items-center gap-1">
-                  <ChartTool active>
+                  <ChartTool
+                    active={chartMode === "candles"}
+                    label="Candlestick chart"
+                    onClick={() => setChartMode("candles")}
+                  >
                     <BarChart3 className="h-3.5 w-3.5" />
                   </ChartTool>
-                  <ChartTool>
+                  <ChartTool
+                    active={showCrosshair}
+                    label="Toggle crosshair"
+                    onClick={() => setShowCrosshair((visible) => !visible)}
+                  >
                     <Crosshair className="h-3.5 w-3.5" />
                   </ChartTool>
-                  <ChartTool>
+                  <ChartTool
+                    active={showIndicators}
+                    label="Toggle chart indicators"
+                    onClick={() => setShowIndicators((visible) => !visible)}
+                  >
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                   </ChartTool>
                   <span className="mx-2 h-4 w-px bg-border" />
-                  <ChartTool>
+                  <ChartTool
+                    active={showLevels}
+                    label="Toggle price levels"
+                    onClick={() => setShowLevels((visible) => !visible)}
+                  >
                     <Layers3 className="h-3.5 w-3.5" />
                   </ChartTool>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground">OHLC · live</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setChartMode((mode) =>
+                        mode === "candles" ? "line" : "candles",
+                      )
+                    }
+                    className="text-[10px] text-primary hover:underline"
+                    aria-label="Toggle chart style"
+                  >
+                    {chartMode === "candles" ? "candles" : "line"}
+                  </button>
+                  <span className="mx-1 h-3 w-px bg-border" />
+                  <span className="text-[10px] text-muted-foreground">
+                    OHLC · live
+                  </span>
                 </div>
               </div>
               <div className="w-full px-1 pt-2">
-                <InteractiveMarketChart symbol={activeSymbol} height={390} compact />
+                <InteractiveMarketChart
+                  symbol={activeSymbol}
+                  height={390}
+                  compact
+                  chartMode={chartMode}
+                  showCrosshair={showCrosshair}
+                  showIndicators={showIndicators}
+                  showLevels={showLevels}
+                />
               </div>
               <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
                 <span>Hover candles for OHLC and volume</span>
@@ -423,15 +556,19 @@ export default function LiveUpdates() {
 
 function IconButton({
   label,
+  onClick,
   children,
 }: {
   label: string;
+  onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
     <button
       aria-label={label}
       title={label}
+      type="button"
+      onClick={onClick}
       className="p-2 hover:bg-muted hover:text-foreground"
     >
       {children}
@@ -440,13 +577,21 @@ function IconButton({
 }
 function ChartTool({
   active,
+  label,
+  onClick,
   children,
 }: {
   active?: boolean;
+  label: string;
+  onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
     <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
       className={`p-1.5 ${active ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
     >
       {children}

@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 
-export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL,
-});
+export function createOpenAiClient(apiKey: string, baseURL?: string) {
+  return new OpenAI({ apiKey, baseURL });
+}
+
+export const openai = createOpenAiClient(
+  process.env.OPENAI_API_KEY ?? "",
+  process.env.OPENAI_BASE_URL,
+);

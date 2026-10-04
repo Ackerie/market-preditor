@@ -14,6 +14,12 @@ export interface ModelVote {
   ok: boolean;
 }
 
+export interface UserAiCredentials {
+  anthropic?: string;
+  openai?: string;
+  gemini?: string;
+}
+
 export interface EnsembleResult {
   signal: Signal;
   confidence: number;
@@ -81,9 +87,19 @@ function parseSignalJson(raw: string): Omit<ModelVote, "model" | "ok"> {
 
 // Providers are loaded lazily so a missing/broken integration config becomes a
 // per-model failure (vote skipped) instead of crashing server startup.
-async function askClaude(prompt: string): Promise<ModelVote> {
-  const { anthropic } = await import("@workspace/integrations-anthropic-ai");
-  const message = await anthropic.messages.create({
+async function askClaude(
+  prompt: string,
+  credentials?: UserAiCredentials,
+): Promise<ModelVote> {
+  const { anthropic, createAnthropicClient } =
+    await import("@workspace/integrations-anthropic-ai");
+  const client = credentials?.anthropic
+    ? createAnthropicClient(
+        credentials.anthropic,
+        process.env.ANTHROPIC_BASE_URL,
+      )
+    : anthropic;
+  const message = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 280,
     messages: [
@@ -98,9 +114,16 @@ async function askClaude(prompt: string): Promise<ModelVote> {
   return { model: "claude", ok: true, ...parseSignalJson(content.text) };
 }
 
-async function askGpt(prompt: string): Promise<ModelVote> {
-  const { openai } = await import("@workspace/integrations-openai-ai-server");
-  const response = await openai.chat.completions.create({
+async function askGpt(
+  prompt: string,
+  credentials?: UserAiCredentials,
+): Promise<ModelVote> {
+  const { openai, createOpenAiClient } =
+    await import("@workspace/integrations-openai-ai-server");
+  const client = credentials?.openai
+    ? createOpenAiClient(credentials.openai, process.env.OPENAI_BASE_URL)
+    : openai;
+  const response = await client.chat.completions.create({
     model: "gpt-5.4-mini",
     max_completion_tokens: 8192,
     messages: [
@@ -114,9 +137,16 @@ async function askGpt(prompt: string): Promise<ModelVote> {
   return { model: "gpt", ok: true, ...parseSignalJson(text) };
 }
 
-async function askGemini(prompt: string): Promise<ModelVote> {
-  const { ai } = await import("@workspace/integrations-gemini-ai");
-  const response = await ai.models.generateContent({
+async function askGemini(
+  prompt: string,
+  credentials?: UserAiCredentials,
+): Promise<ModelVote> {
+  const { ai, createGeminiClient } =
+    await import("@workspace/integrations-gemini-ai");
+  const client = credentials?.gemini
+    ? createGeminiClient(credentials.gemini, process.env.GEMINI_BASE_URL)
+    : ai;
+  const response = await client.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: [
       {
@@ -259,11 +289,12 @@ export function combineVotes(
 export async function getEnsembleSignal(
   prompt: string,
   opts?: CombineOptions,
+  credentials?: UserAiCredentials,
 ): Promise<EnsembleResult> {
   const settled = await Promise.allSettled([
-    askClaude(prompt),
-    askGpt(prompt),
-    askGemini(prompt),
+    askClaude(prompt, credentials),
+    askGpt(prompt, credentials),
+    askGemini(prompt, credentials),
   ]);
   const votes = settled
     .filter(

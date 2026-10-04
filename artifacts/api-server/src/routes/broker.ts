@@ -21,8 +21,15 @@ import { alpaca } from "../lib/alpaca";
 import { oanda } from "../lib/oanda";
 import { krakenPrivate } from "../lib/kraken";
 import { krakenAdapter } from "../lib/brokers/krakenAdapter";
+import {
+  beginOrderRequest,
+  completeOrderRequest,
+  hashOrderRequest,
+  isValidIdempotencyKey,
+} from "../lib/orderIdempotency";
 
 const router: IRouter = Router();
+const MAX_MANUAL_ORDER_USD = 10_000;
 
 function requireAuth(req: Request, res: Response): boolean {
   if (!req.isAuthenticated()) {
@@ -230,6 +237,76 @@ router.post("/broker/orders", async (req: Request, res: Response) => {
     return;
   }
   const { symbol, side, notional } = parsed.data;
+  if (notional > MAX_MANUAL_ORDER_USD) {
+    res.status(400).json({
+      error: `Manual orders are limited to $${MAX_MANUAL_ORDER_USD.toLocaleString()} per order`,
+    });
+    return;
+  }
+  const account = await alpaca(conn, "/v2/account");
+  if (!account.ok) {
+    res.status(400).json({ error: "Unable to verify available buying power" });
+    return;
+  }
+  if (side === "buy") {
+    const available = Number.parseFloat(
+      String(account.data?.buying_power ?? account.data?.cash ?? "0"),
+    );
+    if (!Number.isFinite(available) || notional > available) {
+      res.status(400).json({ error: "Order exceeds available buying power" });
+      return;
+    }
+  } else {
+    const position = await alpaca(
+      conn,
+      `/v2/positions/${encodeURIComponent(symbol.toUpperCase())}`,
+    );
+    const marketValue = position.ok
+      ? Number.parseFloat(String(position.data?.market_value ?? "0"))
+      : 0;
+    if (!Number.isFinite(marketValue) || marketValue <= 0) {
+      res
+        .status(400)
+        .json({ error: "No sellable position is available for this asset" });
+      return;
+    }
+    if (notional > marketValue) {
+      res
+        .status(400)
+        .json({ error: "Order exceeds the sellable position value" });
+      return;
+    }
+  }
+  const idempotencyKey = req.get("idempotency-key");
+  if (!isValidIdempotencyKey(idempotencyKey)) {
+    res
+      .status(400)
+      .json({ error: "A valid Idempotency-Key header is required" });
+    return;
+  }
+  const idempotency = await beginOrderRequest(
+    req.user!.id,
+    idempotencyKey,
+    hashOrderRequest({
+      symbol: symbol.toUpperCase(),
+      side,
+      notional,
+      broker: "alpaca",
+    }),
+  );
+  if (idempotency.kind === "replay") {
+    res.status(idempotency.status).json(idempotency.body);
+    return;
+  }
+  if (idempotency.kind !== "started") {
+    res
+      .status(409)
+      .json({
+        error:
+          "Order request is already processing or the key was reused for a different order",
+      });
+    return;
+  }
   const result = await alpaca(conn, "/v2/orders", {
     method: "POST",
     body: {
@@ -245,16 +322,18 @@ router.post("/broker/orders", async (req: Request, res: Response) => {
       { status: result.status, alpaca: result.data },
       "Alpaca order rejected",
     );
-    res
-      .status(400)
-      .json({ error: result.data?.message ?? "Alpaca rejected the order" });
+    const body = { error: result.data?.message ?? "Alpaca rejected the order" };
+    await completeOrderRequest(req.user!.id, idempotencyKey, 400, body);
+    res.status(400).json(body);
     return;
   }
   req.log.info(
     { symbol, side, notional, mode: conn.mode },
     "Real-money order placed",
   );
-  res.json(orderPayload(result.data));
+  const body = orderPayload(result.data);
+  await completeOrderRequest(req.user!.id, idempotencyKey, 200, body);
+  res.json(body);
 });
 
 function autoTradePayload(row: BrokerConnection) {

@@ -23,11 +23,22 @@ export function decideExit(
   takeProfitPct: number | null,
   stopLossPct: number | null,
 ): ExitDecision {
-  if (position.openQty <= 0 || position.avgCostUsd == null || position.avgCostUsd <= 0 || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+  if (
+    position.openQty <= 0 ||
+    position.avgCostUsd == null ||
+    position.avgCostUsd <= 0 ||
+    !Number.isFinite(currentPrice) ||
+    currentPrice <= 0
+  ) {
     return { exit: null, unrealizedPct: 0 };
   }
-  const unrealizedPct = ((currentPrice - position.avgCostUsd) / position.avgCostUsd) * 100;
-  if (takeProfitPct != null && takeProfitPct > 0 && unrealizedPct >= takeProfitPct) {
+  const unrealizedPct =
+    ((currentPrice - position.avgCostUsd) / position.avgCostUsd) * 100;
+  if (
+    takeProfitPct != null &&
+    takeProfitPct > 0 &&
+    unrealizedPct >= takeProfitPct
+  ) {
     return { exit: "take_profit", unrealizedPct };
   }
   if (stopLossPct != null && stopLossPct > 0 && unrealizedPct <= -stopLossPct) {
@@ -48,16 +59,24 @@ export interface BotBookEntry {
   unrealizedPct: number;
 }
 
-export async function computeBotBook(strategy?: "longterm" | "daytrade"): Promise<BotBookEntry[]> {
-  const since = new Date(Date.now() - POSITION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+export async function computeBotBook(
+  strategy?: "longterm" | "daytrade",
+  onlyUserId?: string,
+): Promise<BotBookEntry[]> {
+  const since = new Date(
+    Date.now() - POSITION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  );
   const rows = await db
     .select()
     .from(autoTradeEventsTable)
-    .where(and(
-      eq(autoTradeEventsTable.outcome, "executed"),
-      gte(autoTradeEventsTable.createdAt, since),
-      ...(strategy ? [eq(autoTradeEventsTable.strategy, strategy)] : []),
-    ))
+    .where(
+      and(
+        eq(autoTradeEventsTable.outcome, "executed"),
+        gte(autoTradeEventsTable.createdAt, since),
+        ...(onlyUserId ? [eq(autoTradeEventsTable.userId, onlyUserId)] : []),
+        ...(strategy ? [eq(autoTradeEventsTable.strategy, strategy)] : []),
+      ),
+    )
     .orderBy(autoTradeEventsTable.createdAt);
 
   // Merge brokers: the AI context cares about the instrument, not the venue.
@@ -80,7 +99,8 @@ export async function computeBotBook(strategy?: "longterm" | "daytrade"): Promis
       symbol,
       openQty,
       avgCostUsd,
-      unrealizedPct: avgCostUsd > 0 ? ((price - avgCostUsd) / avgCostUsd) * 100 : 0,
+      unrealizedPct:
+        avgCostUsd > 0 ? ((price - avgCostUsd) / avgCostUsd) * 100 : 0,
     });
   }
   return book;
@@ -92,16 +112,24 @@ export async function computeBotBook(strategy?: "longterm" | "daytrade"): Promis
  * position — a global aggregate would let one user's position trigger
  * relaxed sells against other users' manual holdings.
  */
-export async function computeBotHolders(strategy?: "longterm" | "daytrade"): Promise<Map<string, Set<string>>> {
-  const since = new Date(Date.now() - POSITION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+export async function computeBotHolders(
+  strategy?: "longterm" | "daytrade",
+  onlyUserId?: string,
+): Promise<Map<string, Set<string>>> {
+  const since = new Date(
+    Date.now() - POSITION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  );
   const rows = await db
     .select()
     .from(autoTradeEventsTable)
-    .where(and(
-      eq(autoTradeEventsTable.outcome, "executed"),
-      gte(autoTradeEventsTable.createdAt, since),
-      ...(strategy ? [eq(autoTradeEventsTable.strategy, strategy)] : []),
-    ))
+    .where(
+      and(
+        eq(autoTradeEventsTable.outcome, "executed"),
+        gte(autoTradeEventsTable.createdAt, since),
+        ...(onlyUserId ? [eq(autoTradeEventsTable.userId, onlyUserId)] : []),
+        ...(strategy ? [eq(autoTradeEventsTable.strategy, strategy)] : []),
+      ),
+    )
     .orderBy(autoTradeEventsTable.createdAt);
 
   const byUser = new Map<string, typeof rows>();
@@ -131,6 +159,7 @@ export async function computeBotHolders(strategy?: "longterm" | "daytrade"): Pro
  * Never throws — guard failures must not block the trading cycle.
  */
 export async function runExitGuards(opts: {
+  onlyUserId?: string;
   takeProfitPct: number | null;
   stopLossPct: number | null;
   emit?: (type: string, data: Record<string, unknown>) => void;
@@ -138,17 +167,24 @@ export async function runExitGuards(opts: {
   if (opts.takeProfitPct == null && opts.stopLossPct == null) return 0;
   let exits = 0;
   try {
-    const since = new Date(Date.now() - POSITION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const since = new Date(
+      Date.now() - POSITION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
     // Exit guards belong to the day-trade bot: only positions the day-trade
     // strategy opened are guarded.
     const rows = await db
       .select()
       .from(autoTradeEventsTable)
-      .where(and(
-        eq(autoTradeEventsTable.outcome, "executed"),
-        eq(autoTradeEventsTable.strategy, "daytrade"),
-        gte(autoTradeEventsTable.createdAt, since),
-      ))
+      .where(
+        and(
+          eq(autoTradeEventsTable.outcome, "executed"),
+          eq(autoTradeEventsTable.strategy, "daytrade"),
+          gte(autoTradeEventsTable.createdAt, since),
+          ...(opts.onlyUserId
+            ? [eq(autoTradeEventsTable.userId, opts.onlyUserId)]
+            : []),
+        ),
+      )
       .orderBy(autoTradeEventsTable.createdAt);
 
     const byUser = new Map<string, typeof rows>();
@@ -165,15 +201,25 @@ export async function runExitGuards(opts: {
         const asset = ALL_ASSETS.find((a) => a.symbol === pos.symbol);
         if (!asset) continue;
         const price = getLivePrice(pos.symbol, asset.basePrice);
-        const decision = decideExit(pos, price, opts.takeProfitPct, opts.stopLossPct);
+        const decision = decideExit(
+          pos,
+          price,
+          opts.takeProfitPct,
+          opts.stopLossPct,
+        );
         if (!decision.exit) continue;
 
         // Sell the full open position; the executor caps to the broker's
         // actual position value, so a generous hint yields a full exit.
         const notionalHint = Math.max(1, pos.openQty * price * 1.05);
         logger.info(
-          { userId, symbol: pos.symbol, exit: decision.exit, unrealizedPct: decision.unrealizedPct },
-          "Day-trade exit guard triggered"
+          {
+            userId,
+            symbol: pos.symbol,
+            exit: decision.exit,
+            unrealizedPct: decision.unrealizedPct,
+          },
+          "Day-trade exit guard triggered",
         );
         opts.emit?.("exit_guard", {
           symbol: pos.symbol,

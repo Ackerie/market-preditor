@@ -7,6 +7,7 @@
     "dev": "cross-env NODE_ENV=development pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps --env-file=.env ./dist/index.mjs",
+    "migrate-credentials": "node --enable-source-maps --env-file=.env ./dist/migrateLegacyCredentials.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -21,6 +22,8 @@
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
     "openai": "^6.48.0",
     "pino": "^9",
     "pino-http": "^10"

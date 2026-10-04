@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import {
+  createAnthropicClient,
+  anthropic,
+} from "@workspace/integrations-anthropic-ai";
+import { db, aiCredentialsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { decryptCredential } from "../lib/credentialCrypto";
 import {
   getCandles,
   getLivePrice,
@@ -14,6 +20,12 @@ import {
 const router = Router();
 
 router.get("/predictions/:symbol", async (req, res) => {
+  if (!req.isAuthenticated()) {
+    res
+      .status(401)
+      .json({ error: "Authentication is required for AI predictions" });
+    return;
+  }
   const symbol = req.params.symbol.toUpperCase();
   const coin = getCoinBySymbol(symbol);
   if (!coin) {
@@ -28,8 +40,32 @@ router.get("/predictions/:symbol", async (req, res) => {
     currentPrice,
   );
 
+  const { consumeAiRequest } = await import("../lib/aiUsage");
+  if (!(await consumeAiRequest(req.user!.id, "anthropic"))) {
+    res.status(429).json({ error: "Daily AI prediction limit reached" });
+    return;
+  }
+
+  let predictionClient = anthropic;
+  const [credential] = await db
+    .select({ apiKey: aiCredentialsTable.apiKey })
+    .from(aiCredentialsTable)
+    .where(
+      and(
+        eq(aiCredentialsTable.userId, req.user!.id),
+        eq(aiCredentialsTable.provider, "anthropic"),
+      ),
+    )
+    .limit(1);
+  if (credential) {
+    predictionClient = createAnthropicClient(
+      decryptCredential(credential.apiKey),
+      process.env.ANTHROPIC_BASE_URL,
+    );
+  }
+
   try {
-    const message = await anthropic.messages.create({
+    const message = await predictionClient.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1200,
       messages: [
@@ -72,7 +108,11 @@ Only respond with valid JSON, no markdown or extra text.`,
       throw new Error("Unexpected response type");
     }
 
-    const cleaned = content.text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "");
+    const cleaned = content.text
+      .trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "");
     const parsed = JSON.parse(cleaned) as {
       signal?: unknown;
       confidence?: unknown;

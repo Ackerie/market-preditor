@@ -1,25 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/auth-web";
 import {
-  useGetAccountProfile,
-  useUpdateAccountProfile,
   useGetPortfolio,
   useGetBrokerStatus,
   useGetOandaStatus,
   useGetKrakenStatus,
-  getGetAccountProfileQueryKey,
   useGetNotificationPrefs,
   useUpdateNotificationPrefs,
   getGetNotificationPrefsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/components/shared";
@@ -35,8 +29,11 @@ import {
   Bell,
   Plus,
   Coins,
+  KeyRound,
+  Trash2,
 } from "lucide-react";
 import RealMoney from "@/pages/real-money";
+import { csrfFetch } from "@/lib/csrf-fetch";
 
 function NotificationsCard() {
   const { toast } = useToast();
@@ -106,6 +103,167 @@ function NotificationsCard() {
             />
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const AI_PROVIDERS = [
+  { id: "anthropic", name: "Claude / Anthropic" },
+  { id: "openai", name: "GPT / OpenAI" },
+  { id: "gemini", name: "Gemini / Google" },
+] as const;
+
+function AiCredentialsCard() {
+  const [configured, setConfigured] = useState<Record<string, string | null>>(
+    {},
+  );
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    csrfFetch("/api/account/ai-credentials")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setConfigured(
+          Object.fromEntries(
+            data.providers.map(
+              (item: { provider: string; maskedKey: string | null }) => [
+                item.provider,
+                item.maskedKey,
+              ],
+            ),
+          ),
+        );
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function save(provider: string) {
+    const apiKey = values[provider]?.trim() ?? "";
+    if (apiKey.length < 10) {
+      toast({
+        title: "Invalid API key",
+        description: "Enter the complete provider key.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBusy(provider);
+    const response = await csrfFetch(
+      `/api/account/ai-credentials/${provider}`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ apiKey }),
+      },
+    );
+    setBusy(null);
+    if (!response.ok) {
+      toast({
+        title: "Could not save key",
+        description: "The provider key was rejected by the server.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const data = await response.json();
+    setConfigured((current) => ({ ...current, [provider]: data.maskedKey }));
+    setValues((current) => ({ ...current, [provider]: "" }));
+    toast({
+      title: "AI key saved",
+      description:
+        "Your key is encrypted before storage and is never shown in full.",
+    });
+  }
+
+  async function remove(provider: string) {
+    setBusy(provider);
+    await csrfFetch(`/api/account/ai-credentials/${provider}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    setBusy(null);
+    setConfigured((current) => ({ ...current, [provider]: null }));
+    toast({
+      title: "AI key removed",
+      description: "The personal provider key was deleted.",
+    });
+  }
+
+  return (
+    <Card className="bg-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-muted-foreground" />
+          Personal AI API keys
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          Optional. Personal keys are encrypted on the server and used for your
+          AI requests. Never paste a key into a URL or chat message.
+        </p>
+        {AI_PROVIDERS.map((provider) => (
+          <div key={provider.id} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor={`ai-key-${provider.id}`}
+                className="text-sm font-medium"
+              >
+                {provider.name}
+              </label>
+              {configured[provider.id] && (
+                <span className="text-xs text-emerald-400">
+                  Configured: {configured[provider.id]}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id={`ai-key-${provider.id}`}
+                type="password"
+                autoComplete="off"
+                value={values[provider.id] ?? ""}
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    [provider.id]: event.target.value,
+                  }))
+                }
+                placeholder={
+                  configured[provider.id]
+                    ? "Enter a replacement key"
+                    : "Paste provider API key"
+                }
+                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => save(provider.id)}
+                disabled={busy === provider.id}
+              >
+                {busy === provider.id ? "Saving..." : "Save key"}
+              </Button>
+              {configured[provider.id] && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => remove(provider.id)}
+                  disabled={busy === provider.id}
+                  aria-label={`Remove ${provider.name} key`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
@@ -478,58 +636,8 @@ export default function Account() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: profile, isLoading: profileLoading } = useGetAccountProfile();
   const { data: portfolio } = useGetPortfolio();
   const { data: krakenStatus } = useGetKrakenStatus();
-
-  const updateProfile = useUpdateAccountProfile();
-
-  const [profileForm, setProfileForm] = useState({
-    phone: "",
-    dateOfBirth: "",
-    address: "",
-    city: "",
-    state: "",
-    country: "",
-    postalCode: "",
-  });
-  const [profileSynced, setProfileSynced] = useState(false);
-
-  if (!profileSynced && profile) {
-    setProfileSynced(true);
-    setProfileForm({
-      phone: profile.phone ?? "",
-      dateOfBirth: profile.dateOfBirth ?? "",
-      address: profile.address ?? "",
-      city: profile.city ?? "",
-      state: profile.state ?? "",
-      country: profile.country ?? "",
-      postalCode: profile.postalCode ?? "",
-    });
-  }
-
-  const handleSaveProfile = () => {
-    updateProfile.mutate(
-      { data: profileForm },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({
-            queryKey: getGetAccountProfileQueryKey(),
-          });
-          toast({
-            title: "Profile saved",
-            description: "Your personal information has been updated.",
-          });
-        },
-        onError: () =>
-          toast({
-            title: "Error",
-            description: "Failed to save profile.",
-            variant: "destructive",
-          }),
-      },
-    );
-  };
 
   return (
     <div className="space-y-6 pb-20">
@@ -561,7 +669,7 @@ export default function Account() {
               {user?.profileImageUrl ? (
                 <img
                   src={user.profileImageUrl}
-                  alt="avatar"
+                  alt={`${user.firstName ?? user.email ?? "Trader"} profile photo`}
                   className="w-full h-full object-cover rounded-full"
                 />
               ) : (
@@ -680,6 +788,7 @@ export default function Account() {
         <TabsContent value="profile">
           <div className="space-y-6">
             <NotificationsCard />
+            <AiCredentialsCard />
             <Card className="bg-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -687,168 +796,12 @@ export default function Account() {
                   Personal Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                {profileLoading ? (
-                  <div className="space-y-4">
-                    {[...Array(5)].map((_, i) => (
-                      <Skeleton key={i} className="h-10 w-full" />
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-muted-foreground">
-                          First Name
-                        </Label>
-                        <Input
-                          value={user?.firstName ?? ""}
-                          disabled
-                          className="bg-muted/30"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Set by your sign-in provider
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-muted-foreground">
-                          Last Name
-                        </Label>
-                        <Input
-                          value={user?.lastName ?? ""}
-                          disabled
-                          className="bg-muted/30"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-muted-foreground">Email</Label>
-                      <Input
-                        value={user?.email ?? ""}
-                        disabled
-                        className="bg-muted/30"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Set by your sign-in provider
-                      </p>
-                    </div>
-
-                    <Separator />
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Contact & Address
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Phone Number</Label>
-                        <Input
-                          placeholder="+1 (555) 000-0000"
-                          value={profileForm.phone}
-                          onChange={(e) =>
-                            setProfileForm((f) => ({
-                              ...f,
-                              phone: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Date of Birth</Label>
-                        <Input
-                          type="date"
-                          value={profileForm.dateOfBirth}
-                          onChange={(e) =>
-                            setProfileForm((f) => ({
-                              ...f,
-                              dateOfBirth: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Street Address</Label>
-                      <Input
-                        placeholder="123 Main Street"
-                        value={profileForm.address}
-                        onChange={(e) =>
-                          setProfileForm((f) => ({
-                            ...f,
-                            address: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div className="space-y-2 col-span-2">
-                        <Label>City</Label>
-                        <Input
-                          placeholder="New York"
-                          value={profileForm.city}
-                          onChange={(e) =>
-                            setProfileForm((f) => ({
-                              ...f,
-                              city: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>State / Province</Label>
-                        <Input
-                          placeholder="NY"
-                          value={profileForm.state}
-                          onChange={(e) =>
-                            setProfileForm((f) => ({
-                              ...f,
-                              state: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>ZIP / Postal Code</Label>
-                        <Input
-                          placeholder="10001"
-                          value={profileForm.postalCode}
-                          onChange={(e) =>
-                            setProfileForm((f) => ({
-                              ...f,
-                              postalCode: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Country</Label>
-                      <Input
-                        placeholder="United States"
-                        value={profileForm.country}
-                        onChange={(e) =>
-                          setProfileForm((f) => ({
-                            ...f,
-                            country: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={handleSaveProfile}
-                        disabled={updateProfile.isPending}
-                        className="min-w-[120px]"
-                      >
-                        {updateProfile.isPending ? "Saving..." : "Save Changes"}
-                      </Button>
-                    </div>
-                  </>
-                )}
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  NexusTrade stores only the email address and optional display
+                  name used for your account. Contact details, date of birth,
+                  and postal address are not collected.
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -82,7 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 {user.profileImageUrl ? (
                   <img
                     src={user.profileImageUrl}
-                    alt="avatar"
+                    alt={`${user.firstName ?? user.email ?? "Trader"} profile photo`}
                     className="w-full h-full object-cover rounded-full"
                   />
                 ) : (

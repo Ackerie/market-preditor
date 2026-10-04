@@ -1,9 +1,10 @@
 import { useAuth } from "@workspace/auth-web";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { TrendingUp, Shield, Zap, BarChart2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function Login() {
   const { isAuthenticated, isLoading, login, register } = useAuth();
@@ -18,6 +19,8 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [hasConfirmedEligibility, setHasConfirmedEligibility] = useState(false);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -29,6 +32,16 @@ export default function Login() {
     event.preventDefault();
     setError(null);
     setResetMessage(null);
+    if (isRegistering && !hasAcceptedTerms) {
+      setError(
+        "Please agree to the Terms and Conditions to create an account.",
+      );
+      return;
+    }
+    if (isRegistering && !hasConfirmedEligibility) {
+      setError("Please confirm that you are eligible to use the service.");
+      return;
+    }
     setIsSubmitting(true);
     if (isForgotPassword) {
       const response = await fetch("/api/auth/forgot-password", {
@@ -80,13 +93,13 @@ export default function Login() {
         <div className="space-y-8">
           <div>
             <h1 className="text-4xl font-bold leading-tight mb-4">
-              Trade smarter with{" "}
-              <span className="text-primary">AI-powered</span> insights
+              A controlled terminal for{" "}
+              <span className="text-primary">real broker accounts</span>
             </h1>
             <p className="text-muted-foreground text-lg leading-relaxed">
-              Trade crypto, stocks, forex, and commodities on your own broker
-              accounts with real-time prices, Claude AI predictions, and
-              professional-grade charts — all in one terminal.
+              Monitor multiple markets, connect supported brokers, use your own
+              AI provider keys, and manage automated trading with explicit
+              limits and deterministic risk checks.
             </p>
           </div>
 
@@ -94,23 +107,23 @@ export default function Login() {
             {[
               {
                 icon: BarChart2,
-                title: "Real-time candlestick charts",
-                desc: "Professional OHLCV charts with technical indicators",
+                title: "Live multi-market terminal",
+                desc: "Streaming prices, candlesticks, filters, indicators, and price levels",
               },
               {
                 icon: Zap,
-                title: "AI market predictions",
-                desc: "Claude-powered signals with confidence scores and targets",
+                title: "Three-agent AI analysis",
+                desc: "Claude, GPT, and Gemini can use your encrypted provider keys",
               },
               {
                 icon: Shield,
-                title: "Your brokers, your money",
-                desc: "Link Alpaca and OANDA accounts — credentials encrypted at rest",
+                title: "Scoped automation controls",
+                desc: "Per-user settings, spending limits, risk gates, and step-up verification",
               },
               {
                 icon: TrendingUp,
-                title: "49 instruments across 5 markets",
-                desc: "10 cryptos, 10 US stocks, 8 forex pairs, 13 futures, 8 commodities",
+                title: "Supported broker connections",
+                desc: "Connect Alpaca, OANDA, or Kraken accounts; credentials are encrypted at rest",
               },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4">
@@ -127,8 +140,8 @@ export default function Login() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          NexusTrade routes real orders to your linked Alpaca and OANDA
-          accounts. Trading involves risk.
+          NexusTrade routes real orders through your linked broker account. It
+          does not hold your funds. Trading involves risk.
         </p>
       </div>
 
@@ -163,49 +176,129 @@ export default function Login() {
           <form className="space-y-4" onSubmit={handleSubmit}>
             {isRegistering && !isForgotPassword && (
               <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="first-name">First name</Label>
+                  <Input
+                    id="first-name"
+                    placeholder="First name"
+                    value={firstName}
+                    onChange={(event) => setFirstName(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="last-name">Last name</Label>
+                  <Input
+                    id="last-name"
+                    placeholder="Last name"
+                    value={lastName}
+                    onChange={(event) => setLastName(event.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="Email address"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </div>
+            {!isForgotPassword && (
+              <div className="space-y-2">
+                <Label htmlFor="password">
+                  {isRegistering ? "Create password" : "Password"}
+                </Label>
                 <Input
-                  placeholder="First name"
-                  value={firstName}
-                  onChange={(event) => setFirstName(event.target.value)}
-                />
-                <Input
-                  placeholder="Last name"
-                  value={lastName}
-                  onChange={(event) => setLastName(event.target.value)}
+                  id="password"
+                  type="password"
+                  placeholder="Password"
+                  autoComplete={
+                    isRegistering ? "new-password" : "current-password"
+                  }
+                  minLength={8}
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                 />
               </div>
             )}
-            <Input
-              type="email"
-              placeholder="Email address"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-            {!isForgotPassword && (
-              <Input
-                type="password"
-                placeholder="Password"
-                autoComplete={
-                  isRegistering ? "new-password" : "current-password"
-                }
-                minLength={8}
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
+            {isRegistering && !isForgotPassword && (
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="Confirm password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                />
+              </div>
             )}
             {isRegistering && !isForgotPassword && (
-              <Input
-                type="password"
-                placeholder="Confirm password"
-                autoComplete="new-password"
-                minLength={8}
-                required
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-              />
+              <label className="flex items-start gap-3 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  required
+                  checked={hasAcceptedTerms}
+                  onChange={(event) =>
+                    setHasAcceptedTerms(event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span>
+                  I agree to the{" "}
+                  <Link href="/terms">
+                    <span className="cursor-pointer text-primary hover:underline">
+                      Terms and Conditions
+                    </span>
+                  </Link>
+                  {", and I acknowledge the "}
+                  <Link href="/cookies">
+                    <span className="cursor-pointer text-primary hover:underline">
+                      Cookie Policy
+                    </span>
+                  </Link>
+                  {" and "}
+                  <Link href="/refunds">
+                    <span className="cursor-pointer text-primary hover:underline">
+                      Refund Policy
+                    </span>
+                  </Link>
+                  .
+                </span>
+              </label>
+            )}
+            {isRegistering && !isForgotPassword && (
+              <label className="flex items-start gap-3 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  required
+                  checked={hasConfirmedEligibility}
+                  onChange={(event) =>
+                    setHasConfirmedEligibility(event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span>
+                  I confirm that I am at least 18 years old and will use only
+                  broker accounts and products I am eligible and authorized to
+                  use. Review the{" "}
+                  <Link href="/trading-disclosures">
+                    <span className="cursor-pointer text-primary hover:underline">
+                      Trading Risk Disclosures
+                    </span>
+                  </Link>
+                  .
+                </span>
+              </label>
             )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             {resetMessage && (
@@ -258,12 +351,46 @@ export default function Login() {
             </button>
           </form>
 
+          <p className="text-center text-xs text-muted-foreground">
+            {isRegistering
+              ? "Your agreement is required to create an account."
+              : "By continuing, you acknowledge the "}
+            {!isRegistering && (
+              <>
+                <Link href="/terms">
+                  <span className="cursor-pointer text-primary hover:underline">
+                    Terms and Conditions
+                  </span>
+                </Link>
+                {", "}
+                <Link href="/cookies">
+                  <span className="cursor-pointer text-primary hover:underline">
+                    Cookie Policy
+                  </span>
+                </Link>
+                {", and "}
+                <Link href="/refunds">
+                  <span className="cursor-pointer text-primary hover:underline">
+                    Refund Policy
+                  </span>
+                </Link>
+                {" and "}
+                <Link href="/trading-disclosures">
+                  <span className="cursor-pointer text-primary hover:underline">
+                    Trading Risk Disclosures
+                  </span>
+                </Link>
+                .
+              </>
+            )}
+          </p>
+
           <div className="pt-6 border-t border-border">
             <div className="grid grid-cols-3 gap-4 text-center">
               {[
                 { value: "49", label: "Instruments" },
-                { value: "2", label: "Broker integrations" },
-                { value: "AI", label: "Powered predictions" },
+                { value: "3", label: "Broker integrations" },
+                { value: "3", label: "AI agents" },
               ].map(({ value, label }) => (
                 <div key={label}>
                   <div className="text-xl font-bold text-primary">{value}</div>

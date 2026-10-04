@@ -53,3 +53,6 @@ Thumbs.db
 # Local tooling and caches
 .cache/
 .local/
+
+.vercel
+.env*
