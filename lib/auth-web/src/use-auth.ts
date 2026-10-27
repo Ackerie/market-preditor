@@ -50,17 +50,25 @@ export function useAuth(): AuthState {
 
   const authenticate = useCallback(
     async (path: string, body: Record<string, string>) => {
-      const response = await fetch(path, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
+      let response: Response;
+      try {
+        response = await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(body),
+        });
+      } catch {
+        return "Unable to reach the authentication service. Check your connection and try again.";
+      }
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as {
           error?: string;
         } | null;
-        return data?.error ?? "Authentication failed";
+        return (
+          data?.error ??
+          `Authentication service returned an unexpected response (HTTP ${response.status}). Please try again.`
+        );
       }
       const data = (await response.json()) as { user: AuthUser };
       setUser(data.user);

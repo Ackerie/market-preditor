@@ -224,6 +224,7 @@ The auto-trade cycle now requests broker-native bars through `BrokerAdapter.getM
 - **Frontend cannot reach API:** confirm the API is on port `8080` and the frontend is on port `5173`.
 - **Database connection fails:** verify PostgreSQL is running and `DATABASE_URL` points to the correct database.
 - **Login or registration returns HTTP 500:** this is usually a database connection failure, not an invalid app password. Replace `YOUR_REAL_POSTGRES_PASSWORD` in `artifacts/api-server/.env` with the password configured for the local PostgreSQL `postgres` role, then restart the API. The database must contain the schema from `pnpm --filter @workspace/db run push`.
+- **Vercel login returns “Authentication failed”:** check Railway runtime logs for `Origin is not allowed`. Configure `APP_URL` as the production frontend origin; preview origins for this Vercel project are also accepted by the API.
 - **AI calls fail:** check the provider-native environment variable names and API keys.
 - **Password reset does not send:** verify `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `APP_URL`, and the sender domain.
 - **Stored broker credentials cannot decrypt:** restore the original `SESSION_SECRET` or reconnect the brokers.

@@ -9,6 +9,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
 import { hasRecentAuthentication } from "./lib/auth";
+import { isAllowedAppOrigin } from "./lib/appOrigins";
 
 const app: Express = express();
 
@@ -60,7 +61,7 @@ app.use(
   cors({
     credentials: true,
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin)) {
+      if (!origin || isAllowedAppOrigin(origin, allowedOrigins)) {
         callback(null, true);
         return;
       }
@@ -155,7 +156,12 @@ app.use("/api/auto-trade/settings", sensitiveActionLimiter);
 app.use((req, res, next) => {
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
   const origin = req.get("origin");
-  if (mutating && req.cookies?.sid && origin && !allowedOrigins.has(origin)) {
+  if (
+    mutating &&
+    req.cookies?.sid &&
+    origin &&
+    !isAllowedAppOrigin(origin, allowedOrigins)
+  ) {
     res.status(403).json({ error: "Cross-origin request rejected" });
     return;
   }
