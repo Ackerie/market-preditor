@@ -32,6 +32,7 @@ export const ListCoinsResponseItem = zod.object({
   volume: zod.number(),
   logoUrl: zod.string(),
   assetType: zod.enum(["crypto", "stock", "forex", "futures", "commodity"]),
+  source: zod.string().optional(),
 });
 export const ListCoinsResponse = zod.array(ListCoinsResponseItem);
 
@@ -48,11 +49,12 @@ export const GetCoinResponse = zod.object({
   price: zod.number(),
   change24h: zod.number(),
   assetType: zod.enum(["crypto", "stock", "forex", "futures", "commodity"]),
+  source: zod.string().optional(),
   marketCap: zod.number(),
   volume: zod.number(),
   logoUrl: zod.string(),
-  high24h: zod.number(),
-  low24h: zod.number(),
+  high24h: zod.number().nullable(),
+  low24h: zod.number().nullable(),
   description: zod.string(),
   priceHistory: zod.array(
     zod.object({
@@ -153,6 +155,7 @@ export const GetMarketSummaryResponse = zod.object({
     volume: zod.number(),
     logoUrl: zod.string(),
     assetType: zod.enum(["crypto", "stock", "forex", "futures", "commodity"]),
+    source: zod.string().optional(),
   }),
   topLoser: zod.object({
     symbol: zod.string(),
@@ -163,6 +166,7 @@ export const GetMarketSummaryResponse = zod.object({
     volume: zod.number(),
     logoUrl: zod.string(),
     assetType: zod.enum(["crypto", "stock", "forex", "futures", "commodity"]),
+    source: zod.string().optional(),
   }),
   totalCoins: zod.number(),
   fearGreedIndex: zod.number(),
@@ -415,6 +419,8 @@ export const GetAutoTradeCandlesParams = zod.object({
 export const GetAutoTradeCandlesResponse = zod.object({
   symbol: zod.string(),
   intervalMinutes: zod.number(),
+  source: zod.string(),
+  volumeType: zod.enum(["traded", "ticks", "unavailable"]),
   candles: zod.array(
     zod.object({
       time: zod.string().describe("ISO timestamp of the candle open"),
@@ -422,6 +428,7 @@ export const GetAutoTradeCandlesResponse = zod.object({
       high: zod.number(),
       low: zod.number(),
       close: zod.number(),
+      volume: zod.number().optional(),
     }),
   ),
 });
@@ -969,4 +976,80 @@ export const UpdateKrakenAutoTradeSettingsResponse = zod.object({
   dailyLimitUsd: zod.number(),
   spentTodayUsd: zod.number(),
   mode: zod.enum(["live"]),
+});
+
+/**
+ * @summary Link a Deriv account for multiplier-contract trading
+ */
+
+export const ConnectDerivBody = zod.object({
+  apiToken: zod.string().min(1),
+});
+
+export const ConnectDerivResponse = zod.object({
+  connected: zod.boolean(),
+  mode: zod.enum(["demo", "live"]).optional(),
+  apiTokenMasked: zod.string().optional(),
+  loginId: zod.string().optional(),
+  cash: zod.number().optional(),
+  equity: zod.number().optional(),
+});
+
+/**
+ * @summary Get Deriv connection and balance status
+ */
+export const GetDerivStatusResponse = zod.object({
+  connected: zod.boolean(),
+  mode: zod.enum(["demo", "live"]).optional(),
+  apiTokenMasked: zod.string().optional(),
+  loginId: zod.string().optional(),
+  cash: zod.number().optional(),
+  equity: zod.number().optional(),
+});
+
+/**
+ * @summary Remove linked Deriv account
+ */
+export const DisconnectDerivResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Get Deriv AI auto-trade limits
+ */
+export const GetDerivAutoTradeSettingsResponse = zod.object({
+  enabled: zod.boolean(),
+  maxPerTradeUsd: zod.number(),
+  dailyLimitUsd: zod.number(),
+  spentTodayUsd: zod.number(),
+  mode: zod.enum(["demo", "live"]),
+});
+
+/**
+ * @summary Update Deriv AI auto-trade settings
+ */
+export const updateDerivAutoTradeSettingsBodyMaxPerTradeUsdMax = 10000;
+
+export const updateDerivAutoTradeSettingsBodyDailyLimitUsdMax = 100000;
+
+export const UpdateDerivAutoTradeSettingsBody = zod.object({
+  enabled: zod.boolean().optional(),
+  maxPerTradeUsd: zod
+    .number()
+    .min(1)
+    .max(updateDerivAutoTradeSettingsBodyMaxPerTradeUsdMax)
+    .optional(),
+  dailyLimitUsd: zod
+    .number()
+    .min(1)
+    .max(updateDerivAutoTradeSettingsBodyDailyLimitUsdMax)
+    .optional(),
+});
+
+export const UpdateDerivAutoTradeSettingsResponse = zod.object({
+  enabled: zod.boolean(),
+  maxPerTradeUsd: zod.number(),
+  dailyLimitUsd: zod.number(),
+  spentTodayUsd: zod.number(),
+  mode: zod.enum(["demo", "live"]),
 });

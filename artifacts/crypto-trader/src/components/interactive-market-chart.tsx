@@ -11,6 +11,7 @@ interface InteractiveMarketChartProps {
   symbol: string;
   height?: number;
   compact?: boolean;
+  isPaused?: boolean;
   chartMode?: "candles" | "line";
   showCrosshair?: boolean;
   showIndicators?: boolean;
@@ -23,40 +24,63 @@ interface ChartCandle {
   high: number;
   low: number;
   close: number;
-  volume: number;
+  volume: number | null;
 }
 
 const TIMEFRAMES: Array<{
   value: MarketChartTimeframe;
   label: string;
-  groupSize: number;
+  durationMs: number;
+  visibleCount: number;
 }> = [
-  { value: "5m", label: "5m", groupSize: 1 },
-  { value: "15m", label: "15m", groupSize: 3 },
-  { value: "1h", label: "1h", groupSize: 12 },
+  { value: "5m", label: "5m", durationMs: 5 * 60 * 1000, visibleCount: 48 },
+  {
+    value: "15m",
+    label: "15m",
+    durationMs: 15 * 60 * 1000,
+    visibleCount: 96,
+  },
+  { value: "1h", label: "1h", durationMs: 60 * 60 * 1000, visibleCount: 40 },
 ];
 
 function aggregateCandles(
   candles: ChartCandle[],
-  groupSize: number,
+  durationMs: number,
 ): ChartCandle[] {
-  if (groupSize === 1) return candles;
-  const grouped: ChartCandle[] = [];
-  for (let index = 0; index < candles.length; index += groupSize) {
-    const group = candles.slice(index, index + groupSize);
-    const first = group[0];
-    const last = group.at(-1);
-    if (!first || !last) continue;
-    grouped.push({
-      timestamp: first.timestamp,
-      open: first.open,
-      high: Math.max(...group.map((candle) => candle.high)),
-      low: Math.min(...group.map((candle) => candle.low)),
-      close: last.close,
-      volume: group.reduce((sum, candle) => sum + candle.volume, 0),
-    });
+  const groups = new Map<number, ChartCandle[]>();
+  for (const candle of candles) {
+    const timestamp = Date.parse(candle.timestamp);
+    if (!Number.isFinite(timestamp)) continue;
+    const bucket = Math.floor(timestamp / durationMs) * durationMs;
+    const group = groups.get(bucket) ?? [];
+    group.push(candle);
+    groups.set(bucket, group);
   }
-  return grouped;
+
+  return [...groups.entries()]
+    .sort(([first], [second]) => first - second)
+    .map(([bucket, group]) => {
+      const sorted = group.sort(
+        (first, second) =>
+          Date.parse(first.timestamp) - Date.parse(second.timestamp),
+      );
+      const first = sorted[0];
+      const last = sorted.at(-1)!;
+      const volumes = sorted.map((candle) => candle.volume);
+      const hasVolume = volumes.every(
+        (volume): volume is number => volume !== null,
+      );
+      return {
+        timestamp: new Date(bucket).toISOString(),
+        open: first.open,
+        high: Math.max(...sorted.map((candle) => candle.high)),
+        low: Math.min(...sorted.map((candle) => candle.low)),
+        close: last.close,
+        volume: hasVolume
+          ? volumes.reduce((sum, volume) => sum + volume, 0)
+          : null,
+      };
+    });
 }
 
 function formatPrice(value: number): string {
@@ -71,6 +95,7 @@ export function InteractiveMarketChart({
   symbol,
   height = 360,
   compact = false,
+  isPaused = false,
   chartMode = "candles",
   showCrosshair = true,
   showIndicators = false,
@@ -80,27 +105,44 @@ export function InteractiveMarketChart({
   const { data, isLoading, isError } = useGetAutoTradeCandles(symbol, {
     query: {
       queryKey: getGetAutoTradeCandlesQueryKey(symbol),
-      refetchInterval: 5000,
+      refetchInterval: isPaused ? false : 5000,
       staleTime: 3000,
     },
   });
 
   const candles = useMemo(() => {
     if (!data?.candles?.length) return [];
-    const normalized = data.candles.map((candle) => ({
-      timestamp: candle.time,
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
-      volume:
-        "volume" in candle && typeof candle.volume === "number"
-          ? candle.volume
-          : 0,
-    }));
+    const normalized = data.candles
+      .filter((candle) => {
+        const values = [candle.open, candle.high, candle.low, candle.close];
+        const volume = candle.volume;
+        return (
+          Number.isFinite(Date.parse(candle.time)) &&
+          values.every((value) => Number.isFinite(value) && value > 0) &&
+          candle.high >= Math.max(candle.open, candle.close) &&
+          candle.low <= Math.min(candle.open, candle.close) &&
+          candle.high >= candle.low &&
+          (volume === undefined ||
+            (Number.isFinite(volume) && volume >= 0))
+        );
+      })
+      .map((candle) => ({
+        timestamp: candle.time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume ?? null,
+      }))
+      .sort(
+        (first, second) =>
+          Date.parse(first.timestamp) - Date.parse(second.timestamp),
+      );
     const selected =
       TIMEFRAMES.find((item) => item.value === timeframe) ?? TIMEFRAMES[0];
-    return aggregateCandles(normalized, selected.groupSize);
+    return aggregateCandles(normalized, selected.durationMs).slice(
+      -selected.visibleCount,
+    );
   }, [data, timeframe]);
 
   const windowHigh = candles.length
@@ -110,6 +152,12 @@ export function InteractiveMarketChart({
     ? Math.min(...candles.map((candle) => candle.low))
     : 0;
   const latest = candles.at(-1);
+  const sourceLabel =
+    data?.source === "simulated"
+      ? "SIMULATED · NOT LIVE"
+      : data?.source
+        ? `BROKER DATA · ${data.source}`
+        : "SOURCE UNKNOWN";
 
   if (isLoading && !data) {
     return (
@@ -117,7 +165,7 @@ export function InteractiveMarketChart({
         className="flex items-center justify-center text-xs text-muted-foreground"
         style={{ height }}
       >
-        Loading live candles...
+        Loading market candles...
       </div>
     );
   }
@@ -127,7 +175,7 @@ export function InteractiveMarketChart({
         className="flex items-center justify-center text-xs text-muted-foreground"
         style={{ height }}
       >
-        Live chart unavailable.
+        Market candles unavailable.
       </div>
     );
   }
@@ -156,14 +204,20 @@ export function InteractiveMarketChart({
           ))}
         </div>
         <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
-          <span className="text-emerald-400">H {formatPrice(windowHigh)}</span>
-          <span className="text-red-400">L {formatPrice(windowLow)}</span>
-          <span>LIVE</span>
+          <span className="text-emerald-400">Window H {formatPrice(windowHigh)}</span>
+          <span className="text-red-400">Window L {formatPrice(windowLow)}</span>
+          <span>{sourceLabel}</span>
+          {latest && (
+            <span>
+              LAST CANDLE {new Date(latest.timestamp).toLocaleString()} (local)
+            </span>
+          )}
         </div>
       </div>
       <CandlestickChart
         candles={candles}
         timeframe={timeframe}
+        volumeLabel={data?.volumeType === "ticks" ? "Tick volume" : "Volume"}
         height={height}
         levels={[
           { label: "HIGH", price: windowHigh, color: "#22c55e" },
@@ -181,11 +235,11 @@ export function InteractiveMarketChart({
             <div>{formatPrice(latest.open)}</div>
           </div>
           <div>
-            <span className="text-muted-foreground">Last</span>
+            <span className="text-muted-foreground">Last close</span>
             <div>{formatPrice(latest.close)}</div>
           </div>
           <div>
-            <span className="text-muted-foreground">Range</span>
+            <span className="text-muted-foreground">Last candle range</span>
             <div>
               {formatPrice(latest.low)} - {formatPrice(latest.high)}
             </div>

@@ -211,6 +211,28 @@ export interface KrakenStatus {
   equity?: number;
 }
 
+export interface ConnectDerivInput {
+  /** @minLength 1 */
+  apiToken: string;
+}
+
+export type DerivStatusMode =
+  (typeof DerivStatusMode)[keyof typeof DerivStatusMode];
+
+export const DerivStatusMode = {
+  demo: "demo",
+  live: "live",
+} as const;
+
+export interface DerivStatus {
+  connected: boolean;
+  mode?: DerivStatusMode;
+  apiTokenMasked?: string;
+  loginId?: string;
+  cash?: number;
+  equity?: number;
+}
+
 export type KrakenAutoTradeSettingsMode =
   (typeof KrakenAutoTradeSettingsMode)[keyof typeof KrakenAutoTradeSettingsMode];
 
@@ -224,6 +246,22 @@ export interface KrakenAutoTradeSettings {
   dailyLimitUsd: number;
   spentTodayUsd: number;
   mode: KrakenAutoTradeSettingsMode;
+}
+
+export type DerivAutoTradeSettingsMode =
+  (typeof DerivAutoTradeSettingsMode)[keyof typeof DerivAutoTradeSettingsMode];
+
+export const DerivAutoTradeSettingsMode = {
+  demo: "demo",
+  live: "live",
+} as const;
+
+export interface DerivAutoTradeSettings {
+  enabled: boolean;
+  maxPerTradeUsd: number;
+  dailyLimitUsd: number;
+  spentTodayUsd: number;
+  mode: DerivAutoTradeSettingsMode;
 }
 
 export type OandaAutoTradeSettingsMode =
@@ -277,6 +315,7 @@ export interface Coin {
   volume: number;
   logoUrl: string;
   assetType: CoinAssetType;
+  source?: string;
 }
 
 export interface PricePoint {
@@ -301,11 +340,12 @@ export interface CoinDetail {
   price: number;
   change24h: number;
   assetType: CoinDetailAssetType;
+  source?: string;
   marketCap: number;
   volume: number;
   logoUrl: string;
-  high24h: number;
-  low24h: number;
+  high24h: number | null;
+  low24h: number | null;
   description: string;
   priceHistory: PricePoint[];
 }
@@ -609,11 +649,23 @@ export interface Candle {
   high: number;
   low: number;
   close: number;
+  volume?: number;
 }
+
+export type CandleSeriesVolumeType =
+  (typeof CandleSeriesVolumeType)[keyof typeof CandleSeriesVolumeType];
+
+export const CandleSeriesVolumeType = {
+  traded: "traded",
+  ticks: "ticks",
+  unavailable: "unavailable",
+} as const;
 
 export interface CandleSeries {
   symbol: string;
   intervalMinutes: number;
+  source: string;
+  volumeType: CandleSeriesVolumeType;
   candles: Candle[];
 }
 

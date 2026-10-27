@@ -140,11 +140,19 @@ export default function Trade() {
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border border-y border-border bg-muted/30 px-0">
                 <div className="px-4 py-2.5 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-0.5">24h High</div>
-                  <div className="text-sm font-mono font-semibold text-emerald-500">{formatCurrency(coinDetail.high24h)}</div>
+                  <div className="text-sm font-mono font-semibold text-emerald-500">
+                    {coinDetail.high24h === null
+                      ? "Unavailable"
+                      : formatCurrency(coinDetail.high24h)}
+                  </div>
                 </div>
                 <div className="px-4 py-2.5 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-0.5">24h Low</div>
-                  <div className="text-sm font-mono font-semibold text-red-500">{formatCurrency(coinDetail.low24h)}</div>
+                  <div className="text-sm font-mono font-semibold text-red-500">
+                    {coinDetail.low24h === null
+                      ? "Unavailable"
+                      : formatCurrency(coinDetail.low24h)}
+                  </div>
                 </div>
                 <div className="px-4 py-2.5 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-0.5">Volume</div>

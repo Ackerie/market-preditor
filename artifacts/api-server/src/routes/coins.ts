@@ -25,14 +25,22 @@ async function getLiveQuotes(
   assets: typeof ALL_ASSETS,
 ): Promise<Map<string, MarketQuote>> {
   const quotes = new Map<string, MarketQuote>();
-  await Promise.all(
+  const resultsByBroker = await Promise.all(
     listBrokers().map(async (broker) => {
       const connection = await broker.getConnection(userId);
-      if (!connection) return;
-      const results = await broker.getMarketQuotes(connection.creds, assets);
-      results.forEach((quote) => quotes.set(quote.symbol, quote));
+      if (!connection) return [];
+      const supportedAssets = assets.filter((asset) =>
+        broker.routeSymbol(asset.symbol, asset.assetType),
+      );
+      if (!supportedAssets.length) return [];
+      return broker.getMarketQuotes(connection.creds, supportedAssets);
     }),
   );
+  resultsByBroker.forEach((results) => {
+    results.forEach((quote) => {
+      if (!quotes.has(quote.symbol)) quotes.set(quote.symbol, quote);
+    });
+  });
   return quotes;
 }
 
@@ -61,7 +69,7 @@ router.get("/coins", async (req, res) => {
         price: live?.price ?? getLivePrice(coin.symbol, coin.basePrice),
         change24h: live?.change24h ?? get24hChange(coin.symbol),
         marketCap: coin.marketCap,
-        volume: live?.volume ?? coin.volume,
+        volume: live?.volume ?? 0,
         logoUrl: coin.logoUrl,
         assetType: coin.assetType,
         source: live?.source ?? "simulated",
@@ -97,24 +105,34 @@ router.get("/coins/:symbol", async (req, res) => {
         route.connection.creds,
         route.brokerSymbol,
         "1h",
-        50,
+        26,
       )
     : null;
   const priceHistory = bars?.map((bar) => ({
     timestamp: bar.time,
     price: bar.close,
   })) ?? [{ timestamp: new Date().toISOString(), price }];
-  const prices = priceHistory.map((point) => point.price);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const last24Hours = (bars ?? []).filter((bar) => {
+    const timestamp = Date.parse(bar.time);
+    return Number.isFinite(timestamp) && timestamp >= cutoff;
+  });
   res.json({
     symbol: coin.symbol,
     name: coin.name,
     price,
     change24h,
     marketCap: coin.marketCap,
-    volume: coin.volume,
+    volume: live?.volume ?? 0,
     logoUrl: coin.logoUrl,
-    high24h: Math.max(...prices),
-    low24h: Math.min(...prices),
+    high24h:
+      last24Hours.length > 0
+        ? Math.max(...last24Hours.map((bar) => bar.high))
+        : null,
+    low24h:
+      last24Hours.length > 0
+        ? Math.min(...last24Hours.map((bar) => bar.low))
+        : null,
     description: coin.description,
     priceHistory,
     assetType: coin.assetType,

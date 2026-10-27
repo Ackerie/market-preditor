@@ -37,8 +37,11 @@ import type {
   Coin,
   CoinDetail,
   ConnectBrokerInput,
+  ConnectDerivInput,
   ConnectKrakenInput,
   ConnectOandaInput,
+  DerivAutoTradeSettings,
+  DerivStatus,
   DisconnectBroker200,
   ErrorEnvelope,
   GetAutoTradePnlParams,
@@ -4159,4 +4162,415 @@ export const useUpdateKrakenAutoTradeSettings = <
   TContext
 > => {
   return useMutation(getUpdateKrakenAutoTradeSettingsMutationOptions(options));
+};
+
+/**
+ * @summary Link a Deriv account for multiplier-contract trading
+ */
+export const getConnectDerivUrl = () => {
+  return `/api/broker/deriv/connect`;
+};
+
+export const connectDeriv = async (
+  connectDerivInput: ConnectDerivInput,
+  options?: RequestInit,
+): Promise<DerivStatus> => {
+  return customFetch<DerivStatus>(getConnectDerivUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(connectDerivInput),
+  });
+};
+
+export const getConnectDerivMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectDeriv>>,
+    TError,
+    { data: BodyType<ConnectDerivInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof connectDeriv>>,
+  TError,
+  { data: BodyType<ConnectDerivInput> },
+  TContext
+> => {
+  const mutationKey = ["connectDeriv"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof connectDeriv>>,
+    { data: BodyType<ConnectDerivInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return connectDeriv(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConnectDerivMutationResult = NonNullable<
+  Awaited<ReturnType<typeof connectDeriv>>
+>;
+export type ConnectDerivMutationBody = BodyType<ConnectDerivInput>;
+export type ConnectDerivMutationError = ErrorType<void>;
+
+/**
+ * @summary Link a Deriv account for multiplier-contract trading
+ */
+export const useConnectDeriv = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectDeriv>>,
+    TError,
+    { data: BodyType<ConnectDerivInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof connectDeriv>>,
+  TError,
+  { data: BodyType<ConnectDerivInput> },
+  TContext
+> => {
+  return useMutation(getConnectDerivMutationOptions(options));
+};
+
+/**
+ * @summary Get Deriv connection and balance status
+ */
+export const getGetDerivStatusUrl = () => {
+  return `/api/broker/deriv/status`;
+};
+
+export const getDerivStatus = async (
+  options?: RequestInit,
+): Promise<DerivStatus> => {
+  return customFetch<DerivStatus>(getGetDerivStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDerivStatusQueryKey = () => {
+  return [`/api/broker/deriv/status`] as const;
+};
+
+export const getGetDerivStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDerivStatus>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDerivStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDerivStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDerivStatus>>> = ({
+    signal,
+  }) => getDerivStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDerivStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDerivStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDerivStatus>>
+>;
+export type GetDerivStatusQueryError = ErrorType<void>;
+
+/**
+ * @summary Get Deriv connection and balance status
+ */
+
+export function useGetDerivStatus<
+  TData = Awaited<ReturnType<typeof getDerivStatus>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDerivStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDerivStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Remove linked Deriv account
+ */
+export const getDisconnectDerivUrl = () => {
+  return `/api/broker/deriv/disconnect`;
+};
+
+export const disconnectDeriv = async (
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getDisconnectDerivUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDisconnectDerivMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectDeriv>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof disconnectDeriv>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["disconnectDeriv"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof disconnectDeriv>>,
+    void
+  > = () => {
+    return disconnectDeriv(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DisconnectDerivMutationResult = NonNullable<
+  Awaited<ReturnType<typeof disconnectDeriv>>
+>;
+
+export type DisconnectDerivMutationError = ErrorType<void>;
+
+/**
+ * @summary Remove linked Deriv account
+ */
+export const useDisconnectDeriv = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectDeriv>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof disconnectDeriv>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDisconnectDerivMutationOptions(options));
+};
+
+/**
+ * @summary Get Deriv AI auto-trade limits
+ */
+export const getGetDerivAutoTradeSettingsUrl = () => {
+  return `/api/broker/deriv/auto-trade`;
+};
+
+export const getDerivAutoTradeSettings = async (
+  options?: RequestInit,
+): Promise<DerivAutoTradeSettings> => {
+  return customFetch<DerivAutoTradeSettings>(
+    getGetDerivAutoTradeSettingsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDerivAutoTradeSettingsQueryKey = () => {
+  return [`/api/broker/deriv/auto-trade`] as const;
+};
+
+export const getGetDerivAutoTradeSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDerivAutoTradeSettings>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDerivAutoTradeSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDerivAutoTradeSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDerivAutoTradeSettings>>
+  > = ({ signal }) => getDerivAutoTradeSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDerivAutoTradeSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDerivAutoTradeSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDerivAutoTradeSettings>>
+>;
+export type GetDerivAutoTradeSettingsQueryError = ErrorType<void>;
+
+/**
+ * @summary Get Deriv AI auto-trade limits
+ */
+
+export function useGetDerivAutoTradeSettings<
+  TData = Awaited<ReturnType<typeof getDerivAutoTradeSettings>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDerivAutoTradeSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDerivAutoTradeSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update Deriv AI auto-trade settings
+ */
+export const getUpdateDerivAutoTradeSettingsUrl = () => {
+  return `/api/broker/deriv/auto-trade`;
+};
+
+export const updateDerivAutoTradeSettings = async (
+  updateBrokerAutoTradeInput: UpdateBrokerAutoTradeInput,
+  options?: RequestInit,
+): Promise<DerivAutoTradeSettings> => {
+  return customFetch<DerivAutoTradeSettings>(
+    getUpdateDerivAutoTradeSettingsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateBrokerAutoTradeInput),
+    },
+  );
+};
+
+export const getUpdateDerivAutoTradeSettingsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDerivAutoTradeSettings>>,
+    TError,
+    { data: BodyType<UpdateBrokerAutoTradeInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDerivAutoTradeSettings>>,
+  TError,
+  { data: BodyType<UpdateBrokerAutoTradeInput> },
+  TContext
+> => {
+  const mutationKey = ["updateDerivAutoTradeSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDerivAutoTradeSettings>>,
+    { data: BodyType<UpdateBrokerAutoTradeInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateDerivAutoTradeSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDerivAutoTradeSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDerivAutoTradeSettings>>
+>;
+export type UpdateDerivAutoTradeSettingsMutationBody =
+  BodyType<UpdateBrokerAutoTradeInput>;
+export type UpdateDerivAutoTradeSettingsMutationError = ErrorType<void>;
+
+/**
+ * @summary Update Deriv AI auto-trade settings
+ */
+export const useUpdateDerivAutoTradeSettings = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDerivAutoTradeSettings>>,
+    TError,
+    { data: BodyType<UpdateBrokerAutoTradeInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDerivAutoTradeSettings>>,
+  TError,
+  { data: BodyType<UpdateBrokerAutoTradeInput> },
+  TContext
+> => {
+  return useMutation(getUpdateDerivAutoTradeSettingsMutationOptions(options));
 };

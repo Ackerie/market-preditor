@@ -947,6 +947,97 @@ paths:
         "401":
           description: Unauthorized
 
+  /broker/deriv/connect:
+    post:
+      tags: [broker]
+      operationId: connectDeriv
+      summary: Link a Deriv account for multiplier-contract trading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectDerivInput"
+      responses:
+        "200":
+          description: Deriv connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DerivStatus"
+        "400":
+          description: Invalid API token
+        "401":
+          description: Unauthorized
+
+  /broker/deriv/status:
+    get:
+      tags: [broker]
+      operationId: getDerivStatus
+      summary: Get Deriv connection and balance status
+      responses:
+        "200":
+          description: Deriv connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DerivStatus"
+        "401":
+          description: Unauthorized
+
+  /broker/deriv/disconnect:
+    delete:
+      tags: [broker]
+      operationId: disconnectDeriv
+      summary: Remove linked Deriv account
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+
+  /broker/deriv/auto-trade:
+    get:
+      tags: [broker]
+      operationId: getDerivAutoTradeSettings
+      summary: Get Deriv AI auto-trade limits
+      responses:
+        "200":
+          description: Deriv AI auto-trade settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DerivAutoTradeSettings"
+        "400":
+          description: No Deriv account connected
+        "401":
+          description: Unauthorized
+    put:
+      tags: [broker]
+      operationId: updateDerivAutoTradeSettings
+      summary: Update Deriv AI auto-trade settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBrokerAutoTradeInput"
+      responses:
+        "200":
+          description: Updated Deriv AI auto-trade settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DerivAutoTradeSettings"
+        "400":
+          description: No Deriv account connected or invalid settings
+        "401":
+          description: Unauthorized
+
 components:
   parameters:
     AuthorizationSessionHeader:
@@ -1215,6 +1306,30 @@ components:
         equity:
           type: number
       required: [connected]
+    ConnectDerivInput:
+      type: object
+      properties:
+        apiToken:
+          type: string
+          minLength: 1
+      required: [apiToken]
+    DerivStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        mode:
+          type: string
+          enum: [demo, live]
+        apiTokenMasked:
+          type: string
+        loginId:
+          type: string
+        cash:
+          type: number
+        equity:
+          type: number
+      required: [connected]
     KrakenAutoTradeSettings:
       type: object
       properties:
@@ -1229,6 +1344,21 @@ components:
         mode:
           type: string
           enum: [live]
+      required: [enabled, maxPerTradeUsd, dailyLimitUsd, spentTodayUsd, mode]
+    DerivAutoTradeSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        maxPerTradeUsd:
+          type: number
+        dailyLimitUsd:
+          type: number
+        spentTodayUsd:
+          type: number
+        mode:
+          type: string
+          enum: [demo, live]
       required: [enabled, maxPerTradeUsd, dailyLimitUsd, spentTodayUsd, mode]
     OandaAutoTradeSettings:
       type: object
@@ -1301,6 +1431,8 @@ components:
         assetType:
           type: string
           enum: [crypto, stock, forex, futures, commodity]
+        source:
+          type: string
 
     PricePoint:
       type: object
@@ -1340,6 +1472,8 @@ components:
         assetType:
           type: string
           enum: [crypto, stock, forex, futures, commodity]
+        source:
+          type: string
         marketCap:
           type: number
         volume:
@@ -1348,8 +1482,10 @@ components:
           type: string
         high24h:
           type: number
+          nullable: true
         low24h:
           type: number
+          nullable: true
         description:
           type: string
         priceHistory:
@@ -1851,15 +1987,22 @@ components:
           type: number
         close:
           type: number
+        volume:
+          type: number
 
     CandleSeries:
       type: object
-      required: [symbol, intervalMinutes, candles]
+      required: [symbol, intervalMinutes, source, volumeType, candles]
       properties:
         symbol:
           type: string
         intervalMinutes:
           type: integer
+        source:
+          type: string
+        volumeType:
+          type: string
+          enum: [traded, ticks, unavailable]
         candles:
           type: array
           items:

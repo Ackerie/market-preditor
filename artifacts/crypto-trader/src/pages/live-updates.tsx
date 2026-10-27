@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useListCoins,
   useGetCoin,
@@ -38,10 +37,20 @@ interface PriceEvent {
 let eventCounter = 0;
 
 function shortVolume(value: number) {
-  if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-  if (value >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(0)}K`;
+  return value.toFixed(0);
+}
+
+function hasBrokerSource(source: string | undefined): boolean {
+  return Boolean(source && source !== "simulated");
+}
+
+function describeSource(source: string | undefined): string {
+  if (!source) return "source unknown";
+  if (source === "simulated") return "simulated";
+  return source.split("-")[0] ?? "source unknown";
 }
 
 export default function LiveUpdates() {
@@ -61,7 +70,6 @@ export default function LiveUpdates() {
   const [events, setEvents] = useState<PriceEvent[]>([]);
   const prevPrices = useRef<Record<string, number>>({});
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const queryClient = useQueryClient();
   const { data: coins } = useListCoins(undefined, {
     query: {
       queryKey: getListCoinsQueryKey(),
@@ -82,15 +90,6 @@ export default function LiveUpdates() {
   useEffect(() => {
     if (selectedCoin && !selectedSymbol) setSelectedSymbol(selectedCoin.symbol);
   }, [selectedCoin, selectedSymbol]);
-  useEffect(() => {
-    if (isPaused) return;
-    const id = setInterval(
-      () => queryClient.invalidateQueries({ queryKey: getListCoinsQueryKey() }),
-      2000,
-    );
-    return () => clearInterval(id);
-  }, [isPaused, queryClient]);
-
   const handleFlash = useCallback((symbol: string, dir: FlashDir) => {
     if (flashTimers.current[symbol]) clearTimeout(flashTimers.current[symbol]);
     setFlashes((previous) => ({ ...previous, [symbol]: dir }));
@@ -112,6 +111,10 @@ export default function LiveUpdates() {
     if (!coins?.length) return;
     const newEvents: PriceEvent[] = [];
     coins.forEach((coin) => {
+      if (!hasBrokerSource(coin.source)) {
+        delete prevPrices.current[coin.symbol];
+        return;
+      }
       const previous = prevPrices.current[coin.symbol];
       if (
         previous !== undefined &&
@@ -161,10 +164,14 @@ export default function LiveUpdates() {
         coin.name.toLowerCase().includes(query))
     );
   });
-  const movers = [...(coins ?? [])]
+  const brokerCoins = (coins ?? []).filter((coin) =>
+    hasBrokerSource(coin.source),
+  );
+  const movers = [...brokerCoins]
     .sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))
     .slice(0, 7);
   const isUp = (selectedCoin?.change24h ?? 0) >= 0;
+  const selectedHasBrokerSource = hasBrokerSource(selectedCoin?.source);
 
   return (
     <div
@@ -174,13 +181,25 @@ export default function LiveUpdates() {
       <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-foreground">
-            <Radio className="h-4 w-4 animate-pulse text-emerald-400" />
+            <Radio
+              className={`h-4 w-4 ${selectedHasBrokerSource ? "text-emerald-400" : "text-amber-400"}`}
+            />
             <span className="font-semibold tracking-tight">Markets</span>
-            <span className="text-[11px] text-emerald-400">LIVE</span>
+            <span
+              className={`text-[11px] ${selectedHasBrokerSource ? "text-emerald-400" : "text-amber-400"}`}
+            >
+              {selectedHasBrokerSource
+                ? "BROKER DATA"
+                : selectedCoin?.source === "simulated"
+                  ? "SIMULATED"
+                  : "SOURCE UNKNOWN"}
+            </span>
           </div>
           <div className="hidden h-4 w-px bg-border sm:block" />
           <span className="hidden text-xs text-muted-foreground sm:block">
-            Streaming prices · 2s refresh
+            {isPaused
+              ? "Updates paused"
+              : "Refreshes every 2s · broker and simulated sources"}
           </span>
         </div>
         <div className="flex items-center gap-1 text-muted-foreground">
@@ -228,7 +247,7 @@ export default function LiveUpdates() {
         )}
       </div>
       <div className="flex gap-1 overflow-hidden border-y border-border bg-card/60 py-2">
-        {movers.map((coin) => (
+        {movers.length ? movers.map((coin) => (
           <button
             key={coin.symbol}
             onClick={() => setSelectedSymbol(coin.symbol)}
@@ -247,7 +266,11 @@ export default function LiveUpdates() {
               {coin.change24h.toFixed(2)}%
             </span>
           </button>
-        ))}
+        )) : (
+          <div className="px-3 text-xs text-muted-foreground">
+            No broker-sourced movers available.
+          </div>
+        )}
       </div>
 
       <div className="grid min-h-170 grid-cols-1 overflow-hidden border border-border bg-card/30 lg:grid-cols-[220px_minmax(0,1fr)_250px]">
@@ -330,7 +353,7 @@ export default function LiveUpdates() {
                       {coin.symbol}
                     </span>
                     <span className="block truncate text-[10px] text-muted-foreground">
-                      {coin.name}
+                      {coin.name} · {describeSource(coin.source)}
                     </span>
                   </span>
                   <span className="text-right">
@@ -373,7 +396,12 @@ export default function LiveUpdates() {
                       <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      {selectedCoin.assetType} · realtime market
+                      {selectedCoin.assetType} ·{" "}
+                      {selectedCoin.source === "simulated"
+                        ? "simulated data"
+                        : selectedCoin.source
+                          ? `${selectedCoin.source} data`
+                          : "source unknown"}
                     </p>
                   </div>
                 </div>
@@ -389,28 +417,39 @@ export default function LiveUpdates() {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 divide-x divide-y border-b border-border sm:grid-cols-4 sm:divide-y-0">
+              <div className="grid grid-cols-2 divide-x divide-y border-b border-border sm:grid-cols-3 sm:divide-y-0">
                 <Metric
                   label="24h high"
-                  value={formatCurrency(
-                    coinDetail?.high24h ?? selectedCoin.price,
-                  )}
+                  value={
+                    coinDetail?.high24h == null
+                      ? "Unavailable"
+                      : formatCurrency(coinDetail.high24h)
+                  }
                   tone="up"
+                  unavailable={coinDetail?.high24h == null}
                 />
                 <Metric
                   label="24h low"
-                  value={formatCurrency(
-                    coinDetail?.low24h ?? selectedCoin.price,
-                  )}
+                  value={
+                    coinDetail?.low24h == null
+                      ? "Unavailable"
+                      : formatCurrency(coinDetail.low24h)
+                  }
                   tone="down"
+                  unavailable={coinDetail?.low24h == null}
                 />
                 <Metric
                   label="Volume"
-                  value={shortVolume(selectedCoin.volume)}
-                />
-                <Metric
-                  label="Market cap"
-                  value={shortVolume(selectedCoin.marketCap)}
+                  value={
+                    selectedHasBrokerSource &&
+                    selectedCoin.volume > 0
+                      ? shortVolume(selectedCoin.volume)
+                      : "Unavailable"
+                  }
+                  unavailable={
+                    !selectedHasBrokerSource ||
+                    selectedCoin.volume <= 0
+                  }
                 />
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -460,7 +499,8 @@ export default function LiveUpdates() {
                   </button>
                   <span className="mx-1 h-3 w-px bg-border" />
                   <span className="text-[10px] text-muted-foreground">
-                    OHLC · live
+                    OHLC ·{" "}
+                    {describeSource(selectedCoin.source)}
                   </span>
                 </div>
               </div>
@@ -469,6 +509,7 @@ export default function LiveUpdates() {
                   symbol={activeSymbol}
                   height={390}
                   compact
+                  isPaused={isPaused}
                   chartMode={chartMode}
                   showCrosshair={showCrosshair}
                   showIndicators={showIndicators}
@@ -477,7 +518,7 @@ export default function LiveUpdates() {
               </div>
               <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
                 <span>Hover candles for OHLC and volume</span>
-                <span>Refreshing every 5s</span>
+                <span>{isPaused ? "Updates paused" : "Refreshing every 5s"}</span>
               </div>
             </>
           ) : (
@@ -497,18 +538,18 @@ export default function LiveUpdates() {
           <div className="grid grid-cols-3 border-b border-border">
             <MarketCount
               label="Gainers"
-              value={(coins ?? []).filter((coin) => coin.change24h > 0).length}
+              value={brokerCoins.filter((coin) => coin.change24h > 0).length}
               tone="up"
             />
             <MarketCount
               label="Losers"
-              value={(coins ?? []).filter((coin) => coin.change24h < 0).length}
+              value={brokerCoins.filter((coin) => coin.change24h < 0).length}
               tone="down"
             />
             <MarketCount
               label="Flat"
               value={
-                (coins ?? []).filter((coin) => coin.change24h === 0).length
+                brokerCoins.filter((coin) => coin.change24h === 0).length
               }
             />
           </div>
@@ -544,7 +585,7 @@ export default function LiveUpdates() {
             ) : (
               <div className="px-3 py-12 text-center text-xs text-muted-foreground">
                 <Activity className="mx-auto mb-3 h-7 w-7 opacity-30" />
-                Waiting for price movements
+                Waiting for broker-sourced price movements
               </div>
             )}
           </div>
@@ -602,10 +643,12 @@ function Metric({
   label,
   value,
   tone,
+  unavailable = false,
 }: {
   label: string;
   value: string;
   tone?: "up" | "down";
+  unavailable?: boolean;
 }) {
   return (
     <div className="px-3 py-2.5">
@@ -613,7 +656,7 @@ function Metric({
         {label}
       </div>
       <div
-        className={`mt-0.5 font-mono text-xs font-semibold ${tone === "up" ? "text-emerald-400" : tone === "down" ? "text-red-400" : "text-foreground"}`}
+        className={`mt-0.5 font-mono text-xs font-semibold ${unavailable ? "text-muted-foreground" : tone === "up" ? "text-emerald-400" : tone === "down" ? "text-red-400" : "text-foreground"}`}
       >
         {value}
       </div>

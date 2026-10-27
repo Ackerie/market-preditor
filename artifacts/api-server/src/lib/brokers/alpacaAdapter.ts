@@ -362,7 +362,7 @@ export const alpacaAdapter: BrokerAdapter = {
             { headers, signal: AbortSignal.timeout(10000) },
           ),
           fetch(
-            `${base}/bars/latest?symbols=${encodeURIComponent(symbols)}${feed}`,
+            `${base}/bars?symbols=${encodeURIComponent(symbols)}&timeframe=1Day&limit=1${feed}`,
             { headers, signal: AbortSignal.timeout(10000) },
           ),
         ]);
@@ -372,12 +372,12 @@ export const alpacaAdapter: BrokerAdapter = {
         };
         const barData = barResponse.ok
           ? ((await barResponse.json()) as {
-              bars?: Record<string, any>;
+              bars?: Record<string, any[]>;
             })
           : undefined;
         return items.flatMap(({ asset, symbol }) => {
           const quote = quoteData.quotes?.[symbol];
-          const bar = barData?.bars?.[symbol];
+          const bar = barData?.bars?.[symbol]?.at(-1);
           const bid = num(quote?.bp);
           const ask = num(quote?.ap);
           const price = bid > 0 && ask > 0 ? (bid + ask) / 2 : bid || ask;

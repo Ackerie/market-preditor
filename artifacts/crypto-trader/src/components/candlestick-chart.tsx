@@ -8,12 +8,13 @@ interface Candle {
   high: number;
   low: number;
   close: number;
-  volume: number;
+  volume: number | null;
 }
 
 interface CandlestickChartProps {
   candles: Candle[];
   timeframe?: string;
+  volumeLabel?: string;
   height?: number;
   levels?: Array<{ label: string; price: number; color: string }>;
   markers?: Array<{ index: number; price: number; side: "buy" | "sell" }>;
@@ -40,6 +41,7 @@ function formatAxisPrice(p: number): string {
 export function CandlestickChart({
   candles,
   timeframe = "5m",
+  volumeLabel = "Volume",
   height = 420,
   levels = [],
   markers = [],
@@ -79,7 +81,7 @@ export function CandlestickChart({
   const yMin = minLow - pricePad;
   const yMax = maxHigh + pricePad;
 
-  const maxVol = Math.max(1, ...candles.map((c) => c.volume));
+  const maxVol = Math.max(1, ...candles.map((c) => c.volume ?? 0));
 
   const priceToY = (p: number) =>
     priceH - ((p - yMin) / (yMax - yMin)) * priceH;
@@ -306,7 +308,7 @@ export function CandlestickChart({
               {candles.map((c, i) => {
                 const cx = candleX(i);
                 const isUp = c.close >= c.open;
-                const vH = volToH(c.volume);
+                const vH = volToH(c.volume ?? 0);
                 const dimmed = hovered !== null && hovered !== i;
                 return (
                   <rect
@@ -410,7 +412,7 @@ export function CandlestickChart({
         >
           <div className="bg-card border border-border rounded-lg shadow-xl p-2.5 text-xs min-w-[148px]">
             <p className="text-muted-foreground mb-1.5 text-[10px] font-medium">
-              {format(new Date(hCandle.timestamp), "MMM d, yyyy  HH:mm")}
+              {format(new Date(hCandle.timestamp), "MMM d, yyyy  HH:mm")} local
             </p>
             <div className="space-y-1 font-mono">
               <div className="flex justify-between gap-5">
@@ -444,11 +446,13 @@ export function CandlestickChart({
                 </span>
               </div>
               <div className="flex justify-between gap-5 pt-1 mt-0.5 border-t border-border/60">
-                <span className="text-muted-foreground">Vol</span>
+                <span className="text-muted-foreground">{volumeLabel}</span>
                 <span className="font-medium">
-                  {hCandle.volume >= 1000
-                    ? `${(hCandle.volume / 1000).toFixed(1)}K`
-                    : hCandle.volume.toFixed(2)}
+                  {hCandle.volume === null
+                    ? "Unavailable"
+                    : hCandle.volume >= 1000
+                      ? `${(hCandle.volume / 1000).toFixed(1)}K`
+                      : hCandle.volume.toFixed(2)}
                 </span>
               </div>
             </div>

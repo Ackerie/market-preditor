@@ -33,7 +33,9 @@ import {
   computeBotHolders,
   type BotBookEntry,
 } from "../lib/dayTradeGuards";
-import { resolveBrokerRoute } from "../lib/brokerRouting";
+import {
+  resolveBrokerRoute,
+} from "../lib/brokerRouting";
 import {
   getBroker,
   listBrokers,
@@ -872,8 +874,8 @@ router.get("/auto-trade/pnl", async (req, res) => {
   }
 });
 
-// The intraday candle series the day-trade bot analyzes for an instrument —
-// the same cached series is fed to the AI prompt and rendered by the UI.
+// Prefer broker-native bars for the market chart; simulated data is explicitly
+// identified when no connected provider can supply a usable series.
 router.get("/auto-trade/candles/:symbol", async (req, res) => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Not authenticated" });
@@ -884,25 +886,28 @@ router.get("/auto-trade/candles/:symbol", async (req, res) => {
     res.status(404).json({ error: "Unknown symbol" });
     return;
   }
-  const route = resolveBrokerRoute(asset.symbol, asset.assetType);
-  if (route) {
-    const adapter = getBroker(route.broker);
-    const connection = adapter
-      ? await adapter.getConnection(req.user!.id)
-      : undefined;
-    if (adapter && connection) {
-      const nativeBars = await adapter
-        .getMarketBars(connection.creds, route.brokerSymbol, "5m", 40)
-        .catch(() => null);
-      if (nativeBars && nativeBars.length >= 10) {
-        res.json({
-          symbol: asset.symbol,
-          intervalMinutes: CANDLE_INTERVAL_MINUTES,
-          source: "broker",
-          candles: nativeBars,
-        });
-        return;
-      }
+  for (const adapter of listBrokers()) {
+    const route = adapter.routeSymbol(asset.symbol, asset.assetType);
+    if (!route) continue;
+    const connection = await adapter.getConnection(req.user!.id);
+    if (!connection) continue;
+    const nativeBars = await adapter
+      .getMarketBars(connection.creds, route.brokerSymbol, "5m", 480)
+      .catch(() => null);
+    if (nativeBars && nativeBars.length >= 10) {
+      res.json({
+        symbol: asset.symbol,
+        intervalMinutes: CANDLE_INTERVAL_MINUTES,
+        source: adapter.displayName,
+        volumeType:
+          adapter.id === "oanda"
+            ? "ticks"
+            : adapter.id === "deriv"
+              ? "unavailable"
+              : "traded",
+        candles: nativeBars,
+      });
+      return;
     }
   }
 
@@ -910,6 +915,7 @@ router.get("/auto-trade/candles/:symbol", async (req, res) => {
     symbol: asset.symbol,
     intervalMinutes: CANDLE_INTERVAL_MINUTES,
     source: "simulated",
+    volumeType: "unavailable",
     candles: getCandles(asset.symbol, asset.basePrice),
   });
 });
