@@ -519,25 +519,267 @@ export const COMMODITIES: CoinData[] = [
 export const ALL_ASSETS: CoinData[] = [...COINS, ...STOCKS, ...FOREX, ...FUTURES, ...COMMODITIES];
 
 const priceCache = new Map<string, { price: number; updatedAt: number }>();
+const publicQuoteCache = new Map<string, { price: number; change24h: number; updatedAt: number }>();
+const publicQuoteRequests = new Map<
+  string,
+  Promise<{ price: number; change24h: number; source: "public" } | null>
+>();
 
-export function getLivePrice(symbol: string, basePrice: number): number {
-  const cached = priceCache.get(symbol);
-  const now = Date.now();
-  if (cached && now - cached.updatedAt < 10000) {
-    return cached.price;
-  }
-  const variation = (Math.random() - 0.5) * 0.02;
-  const newPrice = cached
-    ? cached.price * (1 + variation)
-    : basePrice * (1 + (Math.random() - 0.5) * 0.05);
-  priceCache.set(symbol, { price: newPrice, updatedAt: now });
-  return newPrice;
+function getQuoteCacheKey(symbol: string, assetType?: AssetType): string {
+  return `${assetType ?? "unknown"}:${symbol.toUpperCase()}`;
 }
 
-export function get24hChange(symbol: string): number {
-  const seed = symbol.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const rng = Math.sin(seed + Math.floor(Date.now() / 3600000)) * 10000;
-  return ((rng - Math.floor(rng)) - 0.5) * 16;
+function resolvePublicTicker(symbol: string, assetType?: AssetType): string {
+  const normalized = symbol.toUpperCase();
+  const tickers: Record<string, string> = {
+    BTC: "BTC-USD",
+    ETH: "ETH-USD",
+    SOL: "SOL-USD",
+    BNB: "BNB-USD",
+    XRP: "XRP-USD",
+    ADA: "ADA-USD",
+    AVAX: "AVAX-USD",
+    DOT: "DOT-USD",
+    LINK: "LINK-USD",
+    DOGE: "DOGE-USD",
+    BTC_PERP: "BTC-USD",
+    ETH_PERP: "ETH-USD",
+    SOL_PERP: "SOL-USD",
+    BNB_PERP: "BNB-USD",
+    XRP_PERP: "XRP-USD",
+    AVAX_PERP: "AVAX-USD",
+    DOGE_PERP: "DOGE-USD",
+    EURUSD: "EURUSD=X",
+    GBPUSD: "GBPUSD=X",
+    USDJPY: "USDJPY=X",
+    AUDUSD: "AUDUSD=X",
+    USDCAD: "USDCAD=X",
+    USDCHF: "USDCHF=X",
+    NZDUSD: "NZDUSD=X",
+    XAUUSD: "GC=F",
+    ES_FUT: "ES=F",
+    NQ_FUT: "NQ=F",
+    YM_FUT: "YM=F",
+    AAPL_FUT: "AAPL",
+    TSLA_FUT: "TSLA",
+    NVDA_FUT: "NVDA",
+    WTI: "CL=F",
+    BRENT: "BZ=F",
+    NATGAS: "NG=F",
+    SILVER: "SI=F",
+    COPPER: "HG=F",
+    PLATINUM: "PL=F",
+    WHEAT: "ZW=F",
+    CORN: "C=F",
+  };
+
+  const mapped = tickers[normalized.replace(/[^A-Z0-9]/g, "_")];
+  if (mapped) return mapped;
+  return normalized;
+}
+
+async function fetchCoinGeckoQuote(
+  symbol: string,
+  assetType?: AssetType,
+): Promise<{ price: number; change24h: number } | null> {
+  if (assetType !== "crypto") return null;
+
+  const coinGeckoIds: Record<string, string> = {
+    BTC: "bitcoin",
+    ETH: "ethereum",
+    SOL: "solana",
+    BNB: "binancecoin",
+    XRP: "ripple",
+    ADA: "cardano",
+    AVAX: "avalanche-2",
+    DOT: "polkadot",
+    LINK: "chainlink",
+    DOGE: "dogecoin",
+  };
+
+  const id = coinGeckoIds[symbol.toUpperCase()];
+  if (!id) return null;
+
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd&include_24hr_change=true`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as Record<string, { usd?: number; usd_24h_change?: number }>;
+    const quote = data[id];
+    if (!quote) return null;
+
+    const usd = Number(quote.usd ?? 0);
+    if (!Number.isFinite(usd) || usd <= 0) return null;
+
+    return {
+      price: usd,
+      change24h: Number(quote.usd_24h_change ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchBinanceQuote(
+  symbol: string,
+  assetType?: AssetType,
+): Promise<{ price: number; change24h: number } | null> {
+  if (assetType !== "crypto") return null;
+
+  const binancePairs: Record<string, string> = {
+    BTC: "BTCUSDT",
+    ETH: "ETHUSDT",
+    SOL: "SOLUSDT",
+    BNB: "BNBUSDT",
+    XRP: "XRPUSDT",
+    ADA: "ADAUSDT",
+    AVAX: "AVAXUSDT",
+    DOT: "DOTUSDT",
+    LINK: "LINKUSDT",
+    DOGE: "DOGEUSDT",
+  };
+
+  const pair = binancePairs[symbol.toUpperCase()];
+  if (!pair) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(
+      `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(pair)}`,
+      { signal: controller.signal, headers: { accept: "application/json" } },
+    );
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as { lastPrice?: string; priceChangePercent?: string };
+    const price = Number(data.lastPrice ?? 0);
+    const change24h = Number(data.priceChangePercent ?? 0);
+    if (!Number.isFinite(price) || price <= 0) return null;
+    return { price, change24h };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchYahooChartQuote(
+  symbol: string,
+  assetType?: AssetType,
+): Promise<{ price: number; change24h: number } | null> {
+  const ticker = resolvePublicTicker(symbol, assetType);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1m`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+    const data = (await response.json()) as any;
+    const meta = data?.chart?.result?.[0]?.meta;
+    const price = Number(meta?.regularMarketPrice ?? meta?.previousClose ?? 0);
+
+    if (!Number.isFinite(price) || price <= 0) return null;
+
+    const changePercent = Number.isFinite(meta?.regularMarketChangePercent)
+      ? Number(meta.regularMarketChangePercent)
+      : ((price - Number(meta?.previousClose ?? price)) /
+          (Number(meta?.previousClose ?? price) || 1)) *
+        100;
+
+    return {
+      price,
+      change24h: changePercent,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPublicMarketQuote(
+  symbol: string,
+  assetType?: AssetType,
+): Promise<{ price: number; change24h: number } | null> {
+  const providers: Array<
+    (sym: string, type?: AssetType) => Promise<{ price: number; change24h: number } | null>
+  > = assetType === "crypto"
+    ? [fetchCoinGeckoQuote, fetchBinanceQuote, fetchYahooChartQuote]
+    : [fetchYahooChartQuote];
+
+  for (const provider of providers) {
+    const quote = await provider(symbol, assetType);
+    if (quote) return quote;
+  }
+
+  return null;
+}
+
+export async function refreshPublicQuote(
+  symbol: string,
+  basePrice: number,
+  assetType?: AssetType,
+): Promise<{ price: number; change24h: number; source: "public" } | null> {
+  const quote = await fetchPublicMarketQuote(symbol, assetType);
+  if (!quote) return null;
+  const key = getQuoteCacheKey(symbol, assetType);
+  publicQuoteCache.set(key, {
+    ...quote,
+    updatedAt: Date.now(),
+  });
+  priceCache.set(key, { price: quote.price, updatedAt: Date.now() });
+  return { ...quote, source: "public" };
+}
+
+export function getLivePrice(symbol: string, basePrice: number, assetType?: AssetType): number {
+  const key = getQuoteCacheKey(symbol, assetType);
+  const cached = publicQuoteCache.get(key) ?? priceCache.get(key);
+  const now = Date.now();
+
+  if (cached && now - cached.updatedAt < 30000) {
+    return cached.price;
+  }
+
+  if (!publicQuoteRequests.has(key)) {
+    const request = refreshPublicQuote(symbol, basePrice, assetType)
+      .catch((): null => null)
+      .finally(() => publicQuoteRequests.delete(key));
+    publicQuoteRequests.set(key, request);
+  }
+
+  return cached?.price ?? basePrice;
+}
+
+export function get24hChange(symbol: string, assetType?: AssetType): number {
+  const key = getQuoteCacheKey(symbol, assetType);
+  const cached = publicQuoteCache.get(key);
+  const now = Date.now();
+
+  if (cached && now - cached.updatedAt < 30000) {
+    return cached.change24h;
+  }
+
+  if (!publicQuoteRequests.has(key)) {
+    const request = refreshPublicQuote(symbol, 0, assetType)
+      .catch((): null => null)
+      .finally(() => publicQuoteRequests.delete(key));
+    publicQuoteRequests.set(key, request);
+  }
+
+  return cached?.change24h ?? 0;
 }
 
 export function generatePriceHistory(basePrice: number, points = 50): Array<{ timestamp: string; price: number }> {

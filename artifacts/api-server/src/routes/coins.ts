@@ -4,6 +4,7 @@ import {
   get24hChange,
   getCoinBySymbol,
   getLivePrice,
+  refreshPublicQuote,
   type AssetType,
 } from "../lib/coins";
 import { listBrokers } from "../lib/brokers";
@@ -61,20 +62,31 @@ router.get("/coins", async (req, res) => {
       ? ALL_ASSETS.filter((c) => c.assetType === assetType)
       : ALL_ASSETS;
     const liveQuotes = await getLiveQuotes(req.user!.id, source);
-    const coins = source.map((coin) => {
-      const live = liveQuotes.get(coin.symbol);
-      return {
-        symbol: coin.symbol,
-        name: coin.name,
-        price: live?.price ?? getLivePrice(coin.symbol, coin.basePrice),
-        change24h: live?.change24h ?? get24hChange(coin.symbol),
-        marketCap: coin.marketCap,
-        volume: live?.volume ?? 0,
-        logoUrl: coin.logoUrl,
-        assetType: coin.assetType,
-        source: live?.source ?? "simulated",
-      };
-    });
+    const coins = await Promise.all(
+      source.map(async (coin) => {
+        const live = liveQuotes.get(coin.symbol);
+        const publicQuote = live
+          ? null
+          : await refreshPublicQuote(coin.symbol, coin.basePrice, coin.assetType);
+        return {
+          symbol: coin.symbol,
+          name: coin.name,
+          price:
+            live?.price ??
+            publicQuote?.price ??
+            getLivePrice(coin.symbol, coin.basePrice, coin.assetType),
+          change24h:
+            live?.change24h ??
+            publicQuote?.change24h ??
+            get24hChange(coin.symbol, coin.assetType),
+          marketCap: coin.marketCap,
+          volume: live?.volume ?? 0,
+          logoUrl: coin.logoUrl,
+          assetType: coin.assetType,
+          source: live?.source ?? publicQuote?.source ?? "simulated",
+        };
+      }),
+    );
     res.json(coins);
   } catch (error) {
     req.log.error({ error }, "Failed to load live broker quotes");
@@ -93,8 +105,13 @@ router.get("/coins/:symbol", async (req, res) => {
     return;
   }
   const live = (await getLiveQuotes(req.user!.id, [coin])).get(coin.symbol);
-  const price = live?.price ?? getLivePrice(coin.symbol, coin.basePrice);
-  const change24h = live?.change24h ?? get24hChange(coin.symbol);
+  const publicQuote = live
+    ? null
+    : await refreshPublicQuote(coin.symbol, coin.basePrice, coin.assetType);
+  const price =
+    live?.price ?? publicQuote?.price ?? getLivePrice(coin.symbol, coin.basePrice, coin.assetType);
+  const change24h =
+    live?.change24h ?? publicQuote?.change24h ?? get24hChange(coin.symbol, coin.assetType);
   const route = await resolveConnectedBrokerRoute(
     req.user!.id,
     coin.symbol,
@@ -136,7 +153,7 @@ router.get("/coins/:symbol", async (req, res) => {
     description: coin.description,
     priceHistory,
     assetType: coin.assetType,
-    source: live?.source ?? "simulated",
+    source: live?.source ?? publicQuote?.source ?? "simulated",
   });
 });
 

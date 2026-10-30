@@ -1,5 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { COINS, getLivePrice, get24hChange } from "../lib/coins";
+import {
+  COINS,
+  getLivePrice,
+  get24hChange,
+  refreshPublicQuote,
+} from "../lib/coins";
 import { alpaca } from "../lib/alpaca";
 import { oanda } from "../lib/oanda";
 import { getAlpacaConnection, getOandaConnection } from "../lib/connections";
@@ -45,16 +50,29 @@ router.get("/market-summary", async (req: Request, res: Response) => {
     const portfolioChange24hPercent =
       portfolioValue > 0 ? (portfolioChange24h / portfolioValue) * 100 : 0;
 
-    const coins = COINS.map((coin) => ({
-      symbol: coin.symbol,
-      name: coin.name,
-      price: getLivePrice(coin.symbol, coin.basePrice),
-      change24h: get24hChange(coin.symbol),
-      marketCap: coin.marketCap,
-      volume: coin.volume,
-      logoUrl: coin.logoUrl,
-      assetType: coin.assetType,
-    }));
+    const priceSnapshots = await Promise.all(
+      COINS.map(async (coin) => {
+        const publicQuote = await refreshPublicQuote(
+          coin.symbol,
+          coin.basePrice,
+          coin.assetType,
+        );
+        return {
+          symbol: coin.symbol,
+          name: coin.name,
+          price: publicQuote?.price ?? getLivePrice(coin.symbol, coin.basePrice, coin.assetType),
+          change24h:
+            publicQuote?.change24h ?? get24hChange(coin.symbol, coin.assetType),
+          marketCap: coin.marketCap,
+          volume: coin.volume,
+          logoUrl: coin.logoUrl,
+          assetType: coin.assetType,
+          source: publicQuote ? "public" : "simulated",
+        };
+      }),
+    );
+
+    const coins = priceSnapshots;
 
     const sorted = [...coins].sort((a, b) => b.change24h - a.change24h);
     const topGainer = sorted[0];
