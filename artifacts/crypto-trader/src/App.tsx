@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CookieNotice } from "@/components/cookie-notice";
@@ -202,6 +203,7 @@ function App() {
         <CookieNotice />
         <StepUpPrompt />
         <Toaster />
+        <Analytics />
       </TooltipProvider>
     </QueryClientProvider>
   );
