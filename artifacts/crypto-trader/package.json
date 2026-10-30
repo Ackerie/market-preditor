@@ -82,6 +82,7 @@
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.1",
-    "@capacitor/core": "^8.5.3"
+    "@capacitor/core": "^8.5.3",
+    "@vercel/analytics": "^2.0.1"
   }
 }
