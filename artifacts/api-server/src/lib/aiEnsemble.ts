@@ -14,10 +14,10 @@ export interface ModelVote {
   ok: boolean;
 }
 
-export interface UserAiCredentials {
-  anthropic?: string;
-  openai?: string;
-  gemini?: string;
+export interface ProviderTokenUsage {
+  provider: "anthropic" | "openai" | "gemini";
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export interface EnsembleResult {
@@ -32,6 +32,12 @@ export interface EnsembleResult {
   reasoning: string;
   votes: ModelVote[];
   modelsResponded: number;
+  usage?: ProviderTokenUsage[];
+}
+
+interface ModelResponse {
+  vote: ModelVote | null;
+  usage: ProviderTokenUsage;
 }
 
 function parseSignalJson(raw: string): Omit<ModelVote, "model" | "ok"> {
@@ -87,19 +93,9 @@ function parseSignalJson(raw: string): Omit<ModelVote, "model" | "ok"> {
 
 // Providers are loaded lazily so a missing/broken integration config becomes a
 // per-model failure (vote skipped) instead of crashing server startup.
-async function askClaude(
-  prompt: string,
-  credentials?: UserAiCredentials,
-): Promise<ModelVote> {
-  const { anthropic, createAnthropicClient } =
-    await import("@workspace/integrations-anthropic-ai");
-  const client = credentials?.anthropic
-    ? createAnthropicClient(
-        credentials.anthropic,
-        process.env.ANTHROPIC_BASE_URL,
-      )
-    : anthropic;
-  const message = await client.messages.create({
+async function askClaude(prompt: string): Promise<ModelResponse> {
+  const { anthropic } = await import("@workspace/integrations-anthropic-ai");
+  const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 280,
     messages: [
@@ -109,21 +105,26 @@ async function askClaude(
       },
     ],
   });
+  const usage: ProviderTokenUsage = {
+    provider: "anthropic",
+    inputTokens: message.usage.input_tokens,
+    outputTokens: message.usage.output_tokens,
+  };
   const content = message.content[0];
-  if (content.type !== "text") throw new Error("non-text response");
-  return { model: "claude", ok: true, ...parseSignalJson(content.text) };
+  if (content.type !== "text") return { vote: null, usage };
+  try {
+    return {
+      vote: { model: "claude", ok: true, ...parseSignalJson(content.text) },
+      usage,
+    };
+  } catch {
+    return { vote: null, usage };
+  }
 }
 
-async function askGpt(
-  prompt: string,
-  credentials?: UserAiCredentials,
-): Promise<ModelVote> {
-  const { openai, createOpenAiClient } =
-    await import("@workspace/integrations-openai-ai-server");
-  const client = credentials?.openai
-    ? createOpenAiClient(credentials.openai, process.env.OPENAI_BASE_URL)
-    : openai;
-  const response = await client.chat.completions.create({
+async function askGpt(prompt: string): Promise<ModelResponse> {
+  const { openai } = await import("@workspace/integrations-openai-ai-server");
+  const response = await openai.chat.completions.create({
     model: "gpt-5.4-mini",
     max_completion_tokens: 8192,
     messages: [
@@ -134,19 +135,24 @@ async function askGpt(
     ],
   });
   const text = response.choices[0]?.message?.content ?? "";
-  return { model: "gpt", ok: true, ...parseSignalJson(text) };
+  const usage: ProviderTokenUsage = {
+    provider: "openai",
+    inputTokens: response.usage?.prompt_tokens ?? null,
+    outputTokens: response.usage?.completion_tokens ?? null,
+  };
+  try {
+    return {
+      vote: { model: "gpt", ok: true, ...parseSignalJson(text) },
+      usage,
+    };
+  } catch {
+    return { vote: null, usage };
+  }
 }
 
-async function askGemini(
-  prompt: string,
-  credentials?: UserAiCredentials,
-): Promise<ModelVote> {
-  const { ai, createGeminiClient } =
-    await import("@workspace/integrations-gemini-ai");
-  const client = credentials?.gemini
-    ? createGeminiClient(credentials.gemini, process.env.GEMINI_BASE_URL)
-    : ai;
-  const response = await client.models.generateContent({
+async function askGemini(prompt: string): Promise<ModelResponse> {
+  const { ai } = await import("@workspace/integrations-gemini-ai");
+  const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: [
       {
@@ -160,7 +166,27 @@ async function askGemini(
     ],
     config: { maxOutputTokens: 8192, responseMimeType: "application/json" },
   });
-  return { model: "gemini", ok: true, ...parseSignalJson(response.text ?? "") };
+  const usage: ProviderTokenUsage = {
+    provider: "gemini",
+    inputTokens: response.usageMetadata?.promptTokenCount ?? null,
+    outputTokens:
+      response.usageMetadata?.candidatesTokenCount == null
+        ? null
+        : response.usageMetadata.candidatesTokenCount +
+          (response.usageMetadata.thoughtsTokenCount ?? 0),
+  };
+  try {
+    return {
+      vote: {
+        model: "gemini",
+        ok: true,
+        ...parseSignalJson(response.text ?? ""),
+      },
+      usage,
+    };
+  } catch {
+    return { vote: null, usage };
+  }
 }
 
 const MODEL_LABELS: Record<ModelVote["model"], string> = {
@@ -289,17 +315,26 @@ export function combineVotes(
 export async function getEnsembleSignal(
   prompt: string,
   opts?: CombineOptions,
-  credentials?: UserAiCredentials,
 ): Promise<EnsembleResult> {
   const settled = await Promise.allSettled([
-    askClaude(prompt, credentials),
-    askGpt(prompt, credentials),
-    askGemini(prompt, credentials),
+    askClaude(prompt),
+    askGpt(prompt),
+    askGemini(prompt),
   ]);
-  const votes = settled
+  const responses = settled
     .filter(
-      (s): s is PromiseFulfilledResult<ModelVote> => s.status === "fulfilled",
+      (s): s is PromiseFulfilledResult<ModelResponse> =>
+        s.status === "fulfilled",
     )
     .map((s) => s.value);
-  return combineVotes(votes, opts);
+  const result = combineVotes(
+    responses.flatMap((response) =>
+      response.vote ? [response.vote] : [],
+    ),
+    opts,
+  );
+  return {
+    ...result,
+    usage: responses.map((response) => response.usage),
+  };
 }

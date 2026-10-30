@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { apiFetch } from "@workspace/auth-web";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,7 @@ export default function ResetPassword() {
     setError(null);
     setMessage(null);
     setIsSubmitting(true);
-    const response = await fetch("/api/auth/reset-password", {
+    const response = await apiFetch("/api/auth/reset-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token, password, confirmPassword }),

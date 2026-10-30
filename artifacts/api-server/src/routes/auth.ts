@@ -21,6 +21,7 @@ import {
   updateSession,
   verifyPassword,
 } from "../lib/auth";
+import { isNativeAppOrigin } from "../lib/appOrigins";
 
 const router: IRouter = Router();
 
@@ -69,7 +70,7 @@ async function startSession(
   req: Request,
   res: Response,
   user: typeof usersTable.$inferSelect,
-) {
+): Promise<string> {
   const sid = await createSession({
     user: {
       id: user.id,
@@ -81,7 +82,10 @@ async function startSession(
     expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL / 1000,
     reauthenticated_at: Date.now(),
   });
-  setSessionCookie(req, res, sid);
+  if (!isNativeAppOrigin(req.get("origin"))) {
+    setSessionCookie(req, res, sid);
+  }
+  return sid;
 }
 
 router.get("/auth/user", (req: Request, res: Response) => {
@@ -126,7 +130,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     })
     .returning();
 
-  await startSession(req, res, user);
+  const sessionToken = await startSession(req, res, user);
   res.status(201).json({
     user: {
       id: user.id,
@@ -135,6 +139,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       lastName: user.lastName,
       profileImageUrl: user.profileImageUrl,
     },
+    ...(isNativeAppOrigin(req.get("origin")) ? { sessionToken } : {}),
   });
 });
 
@@ -158,7 +163,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     return;
   }
 
-  await startSession(req, res, user);
+  const sessionToken = await startSession(req, res, user);
   res.json({
     user: {
       id: user.id,
@@ -167,6 +172,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       lastName: user.lastName,
       profileImageUrl: user.profileImageUrl,
     },
+    ...(isNativeAppOrigin(req.get("origin")) ? { sessionToken } : {}),
   });
 });
 
@@ -201,6 +207,78 @@ router.post("/auth/reauthenticate", async (req: Request, res: Response) => {
     }
   }
   res.json({ success: true, validForMs: STEP_UP_TTL });
+});
+
+router.post("/auth/change-password", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const currentPassword =
+    typeof req.body?.currentPassword === "string"
+      ? req.body.currentPassword
+      : "";
+  const newPassword =
+    typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+  const confirmPassword =
+    typeof req.body?.confirmPassword === "string"
+      ? req.body.confirmPassword
+      : "";
+
+  if (newPassword.length < 8) {
+    res
+      .status(400)
+      .json({ error: "New password must be at least 8 characters" });
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    res.status(400).json({ error: "New passwords do not match" });
+    return;
+  }
+
+  const [user] = await db
+    .select({ passwordHash: usersTable.passwordHash })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.user!.id));
+  if (!user?.passwordHash) {
+    res.status(400).json({
+      error:
+        "This account does not have a password. Use the forgot-password option to set one.",
+    });
+    return;
+  }
+  if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+    res.status(401).json({ error: "Current password is incorrect" });
+    return;
+  }
+
+  const sid = getSessionId(req);
+  if (!sid) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await db.transaction(async (transaction) => {
+    await transaction
+      .update(usersTable)
+      .set({ passwordHash })
+      .where(eq(usersTable.id, req.user!.id));
+    await transaction
+      .delete(sessionsTable)
+      .where(
+        and(
+          sql`${sessionsTable.sess}->'user'->>'id' = ${req.user!.id}`,
+          sql`${sessionsTable.sid} <> ${sid}`,
+        ),
+      );
+    await transaction
+      .delete(passwordResetTokensTable)
+      .where(eq(passwordResetTokensTable.userId, req.user!.id));
+  });
+
+  res.json({ message: "Password changed successfully" });
 });
 
 router.post("/auth/forgot-password", async (req: Request, res: Response) => {

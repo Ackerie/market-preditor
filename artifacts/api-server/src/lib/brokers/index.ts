@@ -16,15 +16,18 @@ import { registerBroker } from "./registry";
 import { alpacaAdapter } from "./alpacaAdapter";
 import { oandaAdapter } from "./oandaAdapter";
 import { krakenAdapter } from "./krakenAdapter";
+import { derivAdapter } from "./derivAdapter";
 
 registerBroker(alpacaAdapter);
 registerBroker(oandaAdapter);
 registerBroker(krakenAdapter);
+registerBroker(derivAdapter);
 
 export { getBroker, listBrokers } from "./registry";
 export { assetForAlpacaSymbol } from "./alpacaAdapter";
 export { assetForOandaInstrument } from "./oandaAdapter";
 export { krakenAdapter } from "./krakenAdapter";
+export { derivAdapter, assetForDerivSymbol } from "./derivAdapter";
 export type {
   BrokerAdapter,
   BrokerCredentials,

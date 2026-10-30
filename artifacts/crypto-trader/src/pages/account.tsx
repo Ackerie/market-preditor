@@ -6,6 +6,7 @@ import {
   useGetBrokerStatus,
   useGetOandaStatus,
   useGetKrakenStatus,
+  useGetDerivStatus,
   useGetNotificationPrefs,
   useUpdateNotificationPrefs,
   getGetNotificationPrefsQueryKey,
@@ -34,6 +35,9 @@ import {
 } from "lucide-react";
 import RealMoney from "@/pages/real-money";
 import { csrfFetch } from "@/lib/csrf-fetch";
+import { AccountDeletionCard } from "@/components/account-deletion-card";
+import { ChangePasswordCard } from "@/components/change-password-card";
+import { AiBudgetCard } from "@/components/ai-budget-card";
 
 function NotificationsCard() {
   const { toast } = useToast();
@@ -118,15 +122,16 @@ function AiCredentialsCard() {
   const [configured, setConfigured] = useState<Record<string, string | null>>(
     {},
   );
-  const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     csrfFetch("/api/account/ai-credentials")
-      .then((response) => (response.ok ? response.json() : null))
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load stored AI keys");
+        return response.json();
+      })
       .then((data) => {
-        if (!data) return;
         setConfigured(
           Object.fromEntries(
             data.providers.map(
@@ -138,60 +143,24 @@ function AiCredentialsCard() {
           ),
         );
       })
-      .catch(() => undefined);
+      .catch(() => setError("Stored personal AI keys could not be loaded."));
   }, []);
-
-  async function save(provider: string) {
-    const apiKey = values[provider]?.trim() ?? "";
-    if (apiKey.length < 10) {
-      toast({
-        title: "Invalid API key",
-        description: "Enter the complete provider key.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setBusy(provider);
-    const response = await csrfFetch(
-      `/api/account/ai-credentials/${provider}`,
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ apiKey }),
-      },
-    );
-    setBusy(null);
-    if (!response.ok) {
-      toast({
-        title: "Could not save key",
-        description: "The provider key was rejected by the server.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const data = await response.json();
-    setConfigured((current) => ({ ...current, [provider]: data.maskedKey }));
-    setValues((current) => ({ ...current, [provider]: "" }));
-    toast({
-      title: "AI key saved",
-      description:
-        "Your key is encrypted before storage and is never shown in full.",
-    });
-  }
 
   async function remove(provider: string) {
     setBusy(provider);
-    await csrfFetch(`/api/account/ai-credentials/${provider}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    setBusy(null);
-    setConfigured((current) => ({ ...current, [provider]: null }));
-    toast({
-      title: "AI key removed",
-      description: "The personal provider key was deleted.",
-    });
+    setError(null);
+    try {
+      const response = await csrfFetch(
+        `/api/account/ai-credentials/${provider}`,
+        { method: "DELETE", credentials: "include" },
+      );
+      if (!response.ok) throw new Error("Could not remove the stored key");
+      setConfigured((current) => ({ ...current, [provider]: null }));
+    } catch {
+      setError("The stored personal AI key could not be removed.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -199,71 +168,47 @@ function AiCredentialsCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-muted-foreground" />
-          Personal AI API keys
+          Legacy personal AI keys
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          Optional. Personal keys are encrypted on the server and used for your
-          AI requests. Never paste a key into a URL or chat message.
+          Personal keys are no longer used. Shared provider keys are managed
+          securely by the service operator. Existing encrypted keys remain
+          stored until you remove them.
         </p>
         {AI_PROVIDERS.map((provider) => (
-          <div key={provider.id} className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
+          <div
+            key={provider.id}
+            className="flex items-center justify-between gap-3"
+          >
+            <div className="min-w-0">
               <label
-                htmlFor={`ai-key-${provider.id}`}
                 className="text-sm font-medium"
               >
                 {provider.name}
               </label>
-              {configured[provider.id] && (
-                <span className="text-xs text-emerald-400">
-                  Configured: {configured[provider.id]}
-                </span>
-              )}
+              <p className="text-xs text-muted-foreground">
+                {configured[provider.id]
+                  ? `Stored but unused: ${configured[provider.id]}`
+                  : "No stored personal key"}
+              </p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                id={`ai-key-${provider.id}`}
-                type="password"
-                autoComplete="off"
-                value={values[provider.id] ?? ""}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [provider.id]: event.target.value,
-                  }))
-                }
-                placeholder={
-                  configured[provider.id]
-                    ? "Enter a replacement key"
-                    : "Paste provider API key"
-                }
-                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              />
+            {configured[provider.id] && (
               <Button
                 type="button"
                 size="sm"
-                onClick={() => save(provider.id)}
+                variant="outline"
+                onClick={() => remove(provider.id)}
                 disabled={busy === provider.id}
+                aria-label={`Remove ${provider.name} key`}
               >
-                {busy === provider.id ? "Saving..." : "Save key"}
+                <Trash2 className="h-4 w-4" />
               </Button>
-              {configured[provider.id] && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => remove(provider.id)}
-                  disabled={busy === provider.id}
-                  aria-label={`Remove ${provider.name} key`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
+            )}
           </div>
         ))}
+        {error && <p className="text-sm text-destructive">{error}</p>}
       </CardContent>
     </Card>
   );
@@ -630,6 +575,65 @@ function KrakenDetailsCard({ onConnect }: { onConnect: () => void }) {
   );
 }
 
+function DerivDetailsCard({ onConnect }: { onConnect: () => void }) {
+  const { data: status, isLoading } = useGetDerivStatus();
+
+  return (
+    <Card className="bg-card">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-muted-foreground" />
+            Deriv — Multiplier Contracts
+          </span>
+          {status?.connected ? (
+            <Badge
+              variant="outline"
+              className={
+                status.mode === "demo"
+                  ? "text-primary border-primary/30"
+                  : "text-amber-500 border-amber-500/30"
+              }
+            >
+              {status.mode === "demo" ? "Demo" : "Live"}
+            </Badge>
+          ) : !isLoading ? (
+            <Badge variant="outline" className="text-muted-foreground">
+              Not connected
+            </Badge>
+          ) : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-12 w-full" />
+        ) : status?.connected ? (
+          <div>
+            <DetailRow
+              label="Account balance"
+              value={formatCurrency(status.cash ?? 0)}
+            />
+            <DetailRow
+              label="Equity incl. contracts"
+              value={formatCurrency(status.equity ?? 0)}
+            />
+            <DetailRow label="Login ID" value={status.loginId ?? "—"} />
+            <DetailRow label="API token" value={status.apiTokenMasked ?? "—"} />
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <TrendingUp className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="text-sm mb-4">No Deriv account connected.</p>
+            <Button variant="outline" size="sm" onClick={onConnect}>
+              Connect Deriv account
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Account() {
   const [tab, setTab] = useState("brokers");
   const { user, logout } = useAuth();
@@ -776,6 +780,7 @@ export default function Account() {
             <AlpacaDetailsCard onConnect={() => setTab("connections")} />
             <OandaDetailsCard onConnect={() => setTab("connections")} />
             <KrakenDetailsCard onConnect={() => setTab("connections")} />
+            <DerivDetailsCard onConnect={() => setTab("connections")} />
           </div>
         </TabsContent>
 
@@ -787,7 +792,9 @@ export default function Account() {
         {/* ── PROFILE TAB ── */}
         <TabsContent value="profile">
           <div className="space-y-6">
+            <ChangePasswordCard />
             <NotificationsCard />
+            <AiBudgetCard />
             <AiCredentialsCard />
             <Card className="bg-card">
               <CardHeader>
@@ -798,12 +805,18 @@ export default function Account() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  NexusTrade stores only the email address and optional display
-                  name used for your account. Contact details, date of birth,
-                  and postal address are not collected.
+                  Review how account and broker information is handled in the{" "}
+                  <a
+                    className="text-primary underline-offset-4 hover:underline"
+                    href="/privacy"
+                  >
+                    Privacy Policy
+                  </a>
+                  .
                 </p>
               </CardContent>
             </Card>
+            <AccountDeletionCard />
           </div>
         </TabsContent>
       </Tabs>

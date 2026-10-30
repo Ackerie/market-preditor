@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@workspace/auth-web";
 import {
   useGetAutoTradeSettings,
   getGetAutoTradeSettingsQueryKey,
@@ -235,7 +236,7 @@ export default function DayTradePanel() {
             : null,
       }),
     })
-      .then((resp) => {
+      .then(async (resp) => {
         if (resp.status === 401) {
           toast({
             variant: "destructive",
@@ -244,17 +245,25 @@ export default function DayTradePanel() {
           });
           return;
         }
-        if (!resp.ok) throw new Error(`Save failed (${resp.status})`);
+        if (!resp.ok) {
+          const result = await resp.json().catch(() => ({}));
+          throw new Error(
+            result.error ?? `Save failed (${resp.status})`,
+          );
+        }
         toast({ title: "Day-trade settings saved" });
         queryClient.invalidateQueries({
           queryKey: getGetAutoTradeSettingsQueryKey(),
         });
       })
-      .catch(() =>
+      .catch((error: unknown) =>
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to save day-trade settings.",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Failed to save day-trade settings.",
         }),
       );
   };
@@ -263,7 +272,7 @@ export default function DayTradePanel() {
     if (running) return;
     setRunning(true);
     try {
-      const statusResp = await fetch("/api/auto-trade/run-status");
+      const statusResp = await apiFetch("/api/auto-trade/run-status");
       if (statusResp.ok && (await statusResp.json()).daytradeRunning) {
         toast({
           title: "Day-trade bot is already running",

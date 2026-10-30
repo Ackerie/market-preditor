@@ -17,7 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
-  AiCredentialStatus,
+  AiBudgetInput,
+  AiBudgetStatus,
   AiCredentialsStatus,
   AuthCredentials,
   AuthUserEnvelope,
@@ -34,12 +35,14 @@ import type {
   BrokerPosition,
   BrokerStatus,
   CandleSeries,
+  ChangePasswordBody,
   Coin,
   CoinDetail,
   ConnectBrokerInput,
   ConnectDerivInput,
   ConnectKrakenInput,
   ConnectOandaInput,
+  DeleteAccountInput,
   DerivAutoTradeSettings,
   DerivStatus,
   DisconnectBroker200,
@@ -60,7 +63,6 @@ import type {
   Prediction,
   RequestPasswordResetBody,
   ResetPasswordBody,
-  SaveAiCredentialInput,
   SuccessResponse,
   Trade,
   TradeInput,
@@ -2021,6 +2023,92 @@ export const useLogoutAuthUser = <
 };
 
 /**
+ * @summary Change the authenticated user's password
+ */
+export const getChangePasswordUrl = () => {
+  return `/api/auth/change-password`;
+};
+
+export const changePassword = async (
+  changePasswordBody: ChangePasswordBody,
+  options?: RequestInit,
+): Promise<MessageResponse> => {
+  return customFetch<MessageResponse>(getChangePasswordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(changePasswordBody),
+  });
+};
+
+export const getChangePasswordMutationOptions = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changePassword>>,
+    TError,
+    { data: BodyType<ChangePasswordBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changePassword>>,
+  TError,
+  { data: BodyType<ChangePasswordBody> },
+  TContext
+> => {
+  const mutationKey = ["changePassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changePassword>>,
+    { data: BodyType<ChangePasswordBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return changePassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChangePasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changePassword>>
+>;
+export type ChangePasswordMutationBody = BodyType<ChangePasswordBody>;
+export type ChangePasswordMutationError = ErrorType<ErrorEnvelope>;
+
+/**
+ * @summary Change the authenticated user's password
+ */
+export const useChangePassword = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changePassword>>,
+    TError,
+    { data: BodyType<ChangePasswordBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof changePassword>>,
+  TError,
+  { data: BodyType<ChangePasswordBody> },
+  TContext
+> => {
+  return useMutation(getChangePasswordMutationOptions(options));
+};
+
+/**
  * @summary Request a password reset email
  */
 export const getRequestPasswordResetUrl = () => {
@@ -2269,6 +2357,92 @@ export function useLogoutBrowserSession<
 }
 
 /**
+ * @summary Permanently delete the authenticated user's account and application data
+ */
+export const getDeleteAccountUrl = () => {
+  return `/api/account`;
+};
+
+export const deleteAccount = async (
+  deleteAccountInput: DeleteAccountInput,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getDeleteAccountUrl(), {
+    ...options,
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deleteAccountInput),
+  });
+};
+
+export const getDeleteAccountMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAccount>>,
+    TError,
+    { data: BodyType<DeleteAccountInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAccount>>,
+  TError,
+  { data: BodyType<DeleteAccountInput> },
+  TContext
+> => {
+  const mutationKey = ["deleteAccount"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAccount>>,
+    { data: BodyType<DeleteAccountInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return deleteAccount(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAccountMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAccount>>
+>;
+export type DeleteAccountMutationBody = BodyType<DeleteAccountInput>;
+export type DeleteAccountMutationError = ErrorType<void>;
+
+/**
+ * @summary Permanently delete the authenticated user's account and application data
+ */
+export const useDeleteAccount = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAccount>>,
+    TError,
+    { data: BodyType<DeleteAccountInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAccount>>,
+  TError,
+  { data: BodyType<DeleteAccountInput> },
+  TContext
+> => {
+  return useMutation(getDeleteAccountMutationOptions(options));
+};
+
+/**
  * @summary Get the current user's notification preferences
  */
 export const getGetNotificationPrefsUrl = () => {
@@ -2431,7 +2605,7 @@ export const useUpdateNotificationPrefs = <
 };
 
 /**
- * @summary Get the current user's configured AI providers
+ * @summary Get legacy personal AI credential status
  */
 export const getGetAiCredentialsUrl = () => {
   return `/api/account/ai-credentials`;
@@ -2482,7 +2656,7 @@ export type GetAiCredentialsQueryResult = NonNullable<
 export type GetAiCredentialsQueryError = ErrorType<void>;
 
 /**
- * @summary Get the current user's configured AI providers
+ * @summary Get legacy personal AI credential status
  */
 
 export function useGetAiCredentials<
@@ -2506,7 +2680,7 @@ export function useGetAiCredentials<
 }
 
 /**
- * @summary Replace one personal AI provider API key
+ * @summary Disabled; personal AI keys are no longer accepted
  */
 export const getSaveAiCredentialUrl = (
   provider: "anthropic" | "openai" | "gemini",
@@ -2516,14 +2690,11 @@ export const getSaveAiCredentialUrl = (
 
 export const saveAiCredential = async (
   provider: "anthropic" | "openai" | "gemini",
-  saveAiCredentialInput: SaveAiCredentialInput,
   options?: RequestInit,
-): Promise<AiCredentialStatus> => {
-  return customFetch<AiCredentialStatus>(getSaveAiCredentialUrl(provider), {
+): Promise<unknown> => {
+  return customFetch<unknown>(getSaveAiCredentialUrl(provider), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(saveAiCredentialInput),
   });
 };
 
@@ -2534,20 +2705,14 @@ export const getSaveAiCredentialMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof saveAiCredential>>,
     TError,
-    {
-      provider: "anthropic" | "openai" | "gemini";
-      data: BodyType<SaveAiCredentialInput>;
-    },
+    { provider: "anthropic" | "openai" | "gemini" },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof saveAiCredential>>,
   TError,
-  {
-    provider: "anthropic" | "openai" | "gemini";
-    data: BodyType<SaveAiCredentialInput>;
-  },
+  { provider: "anthropic" | "openai" | "gemini" },
   TContext
 > => {
   const mutationKey = ["saveAiCredential"];
@@ -2561,14 +2726,11 @@ export const getSaveAiCredentialMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof saveAiCredential>>,
-    {
-      provider: "anthropic" | "openai" | "gemini";
-      data: BodyType<SaveAiCredentialInput>;
-    }
+    { provider: "anthropic" | "openai" | "gemini" }
   > = (props) => {
-    const { provider, data } = props ?? {};
+    const { provider } = props ?? {};
 
-    return saveAiCredential(provider, data, requestOptions);
+    return saveAiCredential(provider, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -2577,11 +2739,11 @@ export const getSaveAiCredentialMutationOptions = <
 export type SaveAiCredentialMutationResult = NonNullable<
   Awaited<ReturnType<typeof saveAiCredential>>
 >;
-export type SaveAiCredentialMutationBody = BodyType<SaveAiCredentialInput>;
+
 export type SaveAiCredentialMutationError = ErrorType<void>;
 
 /**
- * @summary Replace one personal AI provider API key
+ * @summary Disabled; personal AI keys are no longer accepted
  */
 export const useSaveAiCredential = <
   TError = ErrorType<void>,
@@ -2590,20 +2752,14 @@ export const useSaveAiCredential = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof saveAiCredential>>,
     TError,
-    {
-      provider: "anthropic" | "openai" | "gemini";
-      data: BodyType<SaveAiCredentialInput>;
-    },
+    { provider: "anthropic" | "openai" | "gemini" },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof saveAiCredential>>,
   TError,
-  {
-    provider: "anthropic" | "openai" | "gemini";
-    data: BodyType<SaveAiCredentialInput>;
-  },
+  { provider: "anthropic" | "openai" | "gemini" },
   TContext
 > => {
   return useMutation(getSaveAiCredentialMutationOptions(options));
@@ -2693,6 +2849,167 @@ export const useDeleteAiCredential = <
   TContext
 > => {
   return useMutation(getDeleteAiCredentialMutationOptions(options));
+};
+
+/**
+ * @summary Get customer monthly shared AI limit and usage
+ */
+export const getGetAiBudgetUrl = () => {
+  return `/api/account/ai-budget`;
+};
+
+export const getAiBudget = async (
+  options?: RequestInit,
+): Promise<AiBudgetStatus> => {
+  return customFetch<AiBudgetStatus>(getGetAiBudgetUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAiBudgetQueryKey = () => {
+  return [`/api/account/ai-budget`] as const;
+};
+
+export const getGetAiBudgetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAiBudget>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAiBudget>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAiBudgetQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiBudget>>> = ({
+    signal,
+  }) => getAiBudget({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAiBudget>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAiBudgetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAiBudget>>
+>;
+export type GetAiBudgetQueryError = ErrorType<void>;
+
+/**
+ * @summary Get customer monthly shared AI limit and usage
+ */
+
+export function useGetAiBudget<
+  TData = Awaited<ReturnType<typeof getAiBudget>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAiBudget>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAiBudgetQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Set the customer's monthly shared AI spending limit
+ */
+export const getUpdateAiBudgetUrl = () => {
+  return `/api/account/ai-budget`;
+};
+
+export const updateAiBudget = async (
+  aiBudgetInput: AiBudgetInput,
+  options?: RequestInit,
+): Promise<AiBudgetStatus> => {
+  return customFetch<AiBudgetStatus>(getUpdateAiBudgetUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(aiBudgetInput),
+  });
+};
+
+export const getUpdateAiBudgetMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAiBudget>>,
+    TError,
+    { data: BodyType<AiBudgetInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAiBudget>>,
+  TError,
+  { data: BodyType<AiBudgetInput> },
+  TContext
+> => {
+  const mutationKey = ["updateAiBudget"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAiBudget>>,
+    { data: BodyType<AiBudgetInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateAiBudget(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAiBudgetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAiBudget>>
+>;
+export type UpdateAiBudgetMutationBody = BodyType<AiBudgetInput>;
+export type UpdateAiBudgetMutationError = ErrorType<void>;
+
+/**
+ * @summary Set the customer's monthly shared AI spending limit
+ */
+export const useUpdateAiBudget = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAiBudget>>,
+    TError,
+    { data: BodyType<AiBudgetInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAiBudget>>,
+  TError,
+  { data: BodyType<AiBudgetInput> },
+  TContext
+> => {
+  return useMutation(getUpdateAiBudgetMutationOptions(options));
 };
 
 /**

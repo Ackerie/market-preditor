@@ -27,10 +27,18 @@ import {
   useUpdateKrakenAutoTradeSettings,
   useConnectKraken,
   useDisconnectKraken,
+  useGetDerivStatus,
+  getGetDerivStatusQueryKey,
+  useConnectDeriv,
+  useDisconnectDeriv,
+  useGetDerivAutoTradeSettings,
+  getGetDerivAutoTradeSettingsQueryKey,
+  useUpdateDerivAutoTradeSettings,
   getGetPortfolioQueryKey,
   type BrokerStatus,
   type OandaStatus,
   type KrakenStatus,
+  type DerivStatus,
 } from "@workspace/api-client-react";
 import {
   Card,
@@ -247,6 +255,12 @@ export default function RealMoney() {
           Kraken — crypto spot
         </h2>
         <KrakenSection />
+      </section>
+      <section className="space-y-4">
+        <h2 className="text-xl font-bold tracking-tight">
+          Deriv — multiplier contracts
+        </h2>
+        <DerivSection />
       </section>
       <section className="space-y-4">
         <AutoTradeActivityFeed />
@@ -574,6 +588,341 @@ function KrakenAutoTradeCard() {
             <Label htmlFor="kraken-auto-daily">Daily limit (USD)</Label>
             <Input
               id="kraken-auto-daily"
+              type="number"
+              min={1}
+              value={dailyValue}
+              onChange={(event) => setDailyLimit(event.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Used today:{" "}
+            <span className="font-mono font-semibold text-foreground">
+              {formatCurrency(settings.spentTodayUsd)}
+            </span>{" "}
+            of {formatCurrency(settings.dailyLimitUsd)}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={saveLimits}
+            disabled={
+              update.isPending || (maxPerTrade === null && dailyLimit === null)
+            }
+          >
+            Save limits
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DerivSection() {
+  const { data: status, isLoading } = useGetDerivStatus({
+    query: { queryKey: getGetDerivStatusQueryKey(), refetchInterval: 15000 },
+  });
+
+  if (isLoading) return <Skeleton className="h-40 w-full" />;
+  return status?.connected ? (
+    <DerivDashboard status={status} />
+  ) : (
+    <DerivConnectForm />
+  );
+}
+
+function DerivConnectForm() {
+  const [apiToken, setApiToken] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const connect = useConnectDeriv();
+
+  const handleConnect = () => {
+    if (!apiToken.trim()) return;
+    connect.mutate(
+      { data: { apiToken: apiToken.trim() } },
+      {
+        onSuccess: (status) => {
+          toast({
+            title: "Deriv connected",
+            description: `Your Deriv ${status.mode === "demo" ? "demo" : "real"} account ${status.loginId ?? ""} is now linked for multiplier trading.`,
+          });
+          queryClient.invalidateQueries({
+            queryKey: getGetDerivStatusQueryKey(),
+          });
+          queryClient.invalidateQueries({
+            queryKey: getGetPortfolioQueryKey(),
+          });
+        },
+        onError: (error) =>
+          toast({
+            title: "Connection failed",
+            description:
+              error instanceof Error
+                ? error.message
+                : "Could not verify your Deriv API token.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5" /> Connect your Deriv account
+          </CardTitle>
+          <CardDescription>
+            Link Deriv to trade multiplier contracts on crypto, forex majors,
+            and gold. USD-denominated accounts are currently supported. Create
+            an API token from your Deriv account settings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            This connection can place real trades. Multipliers are leveraged
+            contracts — losses can reach the full stake. Never grant the
+            Payments or Withdrawal scopes.
+          </div>
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              In{" "}
+              <a
+                href="https://app.deriv.com/account/api-token"
+                target="_blank"
+                rel="noreferrer"
+                className="underline text-primary"
+              >
+                Deriv → Settings → API token
+              </a>
+              , create a token with the Read and Trade scopes only.
+            </li>
+            <li>
+              Use a token from a demo account to test; a token from a real
+              account trades real funds.
+            </li>
+            <li>Paste the token below.</li>
+          </ol>
+          <div className="space-y-2">
+            <Label htmlFor="deriv-token">API Token</Label>
+            <Input
+              id="deriv-token"
+              type="password"
+              value={apiToken}
+              onChange={(event) => setApiToken(event.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <Button
+            onClick={handleConnect}
+            disabled={connect.isPending || !apiToken.trim()}
+            className="w-full"
+          >
+            {connect.isPending ? "Verifying with Deriv..." : "Connect Deriv"}
+          </Button>
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" /> Deriv verifies the token
+            with an authorize request. Credentials are encrypted at rest and
+            never shown again in full.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DerivDashboard({ status }: { status: DerivStatus }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const disconnect = useDisconnectDeriv();
+
+  const handleDisconnect = () => {
+    disconnect.mutate(undefined, {
+      onSuccess: () => {
+        toast({ title: "Deriv disconnected" });
+        queryClient.invalidateQueries({
+          queryKey: getGetDerivStatusQueryKey(),
+        });
+        queryClient.invalidateQueries({ queryKey: getGetPortfolioQueryKey() });
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <Badge
+            variant={status.mode === "demo" ? "outline" : "destructive"}
+            className="uppercase"
+          >
+            {status.mode === "demo" ? "Demo" : "Live"} · Deriv
+          </Badge>
+          {status.loginId && (
+            <span className="text-xs text-muted-foreground font-mono">
+              {status.loginId}
+            </span>
+          )}
+          {status.apiTokenMasked && (
+            <span className="text-xs text-muted-foreground font-mono">
+              {status.apiTokenMasked}
+            </span>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDisconnect}
+          disabled={disconnect.isPending}
+        >
+          <Unlink className="w-4 h-4 mr-1.5" /> Disconnect
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-sm text-muted-foreground">Account balance</p>
+            <p className="text-2xl font-bold">
+              {formatCurrency(status.cash ?? 0)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-sm text-muted-foreground">
+              Equity incl. open contracts
+            </p>
+            <p className="text-2xl font-bold">
+              {formatCurrency(status.equity ?? 0)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Deriv supports multiplier contracts on crypto, forex majors, and gold
+        for manual and AI orders. Buys open a MULTUP contract; sells close your
+        open contracts on the instrument.
+      </p>
+      <DerivAutoTradeCard />
+    </div>
+  );
+}
+
+function DerivAutoTradeCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: settings, isLoading } = useGetDerivAutoTradeSettings({
+    query: { queryKey: getGetDerivAutoTradeSettingsQueryKey() },
+  });
+  const update = useUpdateDerivAutoTradeSettings();
+  const [maxPerTrade, setMaxPerTrade] = useState<string | null>(null);
+  const [dailyLimit, setDailyLimit] = useState<string | null>(null);
+
+  const maxValue =
+    maxPerTrade ?? (settings ? String(settings.maxPerTradeUsd) : "");
+  const dailyValue =
+    dailyLimit ?? (settings ? String(settings.dailyLimitUsd) : "");
+
+  const save = (data: {
+    enabled?: boolean;
+    maxPerTradeUsd?: number;
+    dailyLimitUsd?: number;
+  }) => {
+    update.mutate(
+      { data },
+      {
+        onSuccess: (updated) => {
+          queryClient.invalidateQueries({
+            queryKey: getGetDerivAutoTradeSettingsQueryKey(),
+          });
+          toast({
+            title:
+              data.enabled === undefined
+                ? "Deriv AI limits saved"
+                : updated.enabled
+                  ? "Deriv AI auto-trading enabled"
+                  : "Deriv AI auto-trading disabled",
+            description:
+              data.enabled && updated.enabled
+                ? `AI may open Deriv multiplier contracts up to ${formatCurrency(updated.maxPerTradeUsd)} per trade and ${formatCurrency(updated.dailyLimitUsd)} per day.`
+                : undefined,
+          });
+        },
+        onError: (error: any) =>
+          toast({
+            title: "Could not save Deriv settings",
+            description:
+              error?.response?.data?.error ??
+              (error instanceof Error ? error.message : "Please try again"),
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  const saveLimits = () => {
+    const max = Number(maxValue);
+    const daily = Number(dailyValue);
+    if (
+      !Number.isFinite(max) ||
+      max < 1 ||
+      !Number.isFinite(daily) ||
+      daily < 1
+    )
+      return;
+    save({ maxPerTradeUsd: max, dailyLimitUsd: daily });
+  };
+
+  if (isLoading || !settings) return <Skeleton className="h-64 w-full" />;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Bot className="w-5 h-5" /> AI Auto-Trader (Deriv)
+          </CardTitle>
+          <Switch
+            checked={settings.enabled}
+            disabled={update.isPending}
+            onCheckedChange={(checked) => save({ enabled: checked })}
+          />
+        </div>
+        <CardDescription>
+          When enabled, AI may open Deriv multiplier contracts on this account,
+          within the limits below.{" "}
+          {settings.mode === "demo"
+            ? "This is a demo account — contracts use virtual funds."
+            : "This is a real account — contracts use real funds."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {settings.enabled && (
+          <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            AI will place real multiplier trades. Keep the per-trade and daily
+            limits conservative; each trade risks its full stake.
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="deriv-auto-max">Max per trade (USD)</Label>
+            <Input
+              id="deriv-auto-max"
+              type="number"
+              min={1}
+              value={maxValue}
+              onChange={(event) => setMaxPerTrade(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="deriv-auto-daily">Daily limit (USD)</Label>
+            <Input
+              id="deriv-auto-daily"
               type="number"
               min={1}
               value={dailyValue}

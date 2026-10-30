@@ -451,6 +451,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LogoutSuccess"
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Change the authenticated user's password
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationSessionHeader"
+        - $ref: "#/components/parameters/SessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword, confirmPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+                confirmPassword:
+                  type: string
+      responses:
+        "200":
+          description: Password changed; other sessions and outstanding reset tokens are invalidated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid password request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthorized or current password is incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /auth/forgot-password:
     post:
       tags: [Auth]
@@ -519,6 +561,33 @@ paths:
         "302":
           description: Session ended and redirected to login.
 
+  /account:
+    delete:
+      tags: [account]
+      operationId: deleteAccount
+      summary: Permanently delete the authenticated user's account and application data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteAccountInput"
+      responses:
+        "200":
+          description: Account and associated application data deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Confirmation phrase is invalid
+        "401":
+          description: Unauthorized or current password is incorrect
+        "404":
+          description: Account no longer exists
+        "429":
+          description: Too many deletion attempts
+
   /account/notifications:
     get:
       tags: [account]
@@ -558,7 +627,7 @@ paths:
     get:
       tags: [account]
       operationId: getAiCredentials
-      summary: Get the current user's configured AI providers
+      summary: Get legacy personal AI credential status
       responses:
         "200":
           description: Provider configuration status without raw credentials
@@ -580,22 +649,10 @@ paths:
     put:
       tags: [account]
       operationId: saveAiCredential
-      summary: Replace one personal AI provider API key
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaveAiCredentialInput"
+      summary: Disabled; personal AI keys are no longer accepted
       responses:
-        "200":
-          description: Credential saved; raw key is never returned
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AiCredentialStatus"
-        "400":
-          description: Invalid provider or API key
+        "410":
+          description: Personal provider keys are disabled
         "401":
           description: Unauthorized
     delete:
@@ -611,6 +668,43 @@ paths:
                 $ref: "#/components/schemas/SuccessResponse"
         "401":
           description: Unauthorized
+
+  /account/ai-budget:
+    get:
+      tags: [account]
+      operationId: getAiBudget
+      summary: Get customer monthly shared AI limit and usage
+      responses:
+        "200":
+          description: Monthly spending limit, estimated usage, and provider readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiBudgetStatus"
+        "401":
+          description: Unauthorized
+    put:
+      tags: [account]
+      operationId: updateAiBudget
+      summary: Set the customer's monthly shared AI spending limit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiBudgetInput"
+      responses:
+        "200":
+          description: Updated monthly limit and current estimated usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiBudgetStatus"
+        "400":
+          description: Invalid monthly spending limit
+        "401":
+          description: Unauthorized
+
   /broker/connect:
     post:
       tags: [broker]
@@ -1090,13 +1184,46 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiCredentialStatus"
-    SaveAiCredentialInput:
+    AiBudgetInput:
       type: object
-      required: [apiKey]
+      required: [monthlyBudgetUsd]
       properties:
-        apiKey:
+        monthlyBudgetUsd:
+          type: number
+          minimum: 1
+          maximum: 1000000
+    AiBudgetStatus:
+      type: object
+      required: [monthlyBudgetUsd, monthlyUsageUsd, usageMonth, providers]
+      properties:
+        monthlyBudgetUsd:
+          type: number
+          nullable: true
+        monthlyUsageUsd:
+          type: number
+        usageMonth:
           type: string
-          minLength: 10
+          pattern: "^[0-9]{4}-[0-9]{2}$"
+        providers:
+          type: object
+          required: [anthropic, openai, gemini]
+          properties:
+            anthropic:
+              type: boolean
+            openai:
+              type: boolean
+            gemini:
+              type: boolean
+    DeleteAccountInput:
+      type: object
+      required: [password, confirmation]
+      properties:
+        password:
+          type: string
+          minLength: 1
+        confirmation:
+          type: string
+          enum: [DELETE]
     ConnectBrokerInput:
       type: object
       properties:

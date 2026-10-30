@@ -1,4 +1,4 @@
-import { useAuth } from "@workspace/auth-web";
+import { apiFetch, useAuth } from "@workspace/auth-web";
 import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { TrendingUp, Shield, Zap, BarChart2, Loader2 } from "lucide-react";
@@ -44,7 +44,7 @@ export default function Login() {
     }
     setIsSubmitting(true);
     if (isForgotPassword) {
-      const response = await fetch("/api/auth/forgot-password", {
+      const response = await apiFetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
@@ -97,9 +97,9 @@ export default function Login() {
               <span className="text-primary">real broker accounts</span>
             </h1>
             <p className="text-muted-foreground text-lg leading-relaxed">
-              Monitor multiple markets, connect supported brokers, use your own
-              AI provider keys, and manage automated trading with explicit
-              limits and deterministic risk checks.
+              Monitor multiple markets, connect supported brokers, use shared
+              AI analysis with a customer-set monthly limit, and manage
+              automated trading with deterministic risk checks.
             </p>
           </div>
 
@@ -113,7 +113,7 @@ export default function Login() {
               {
                 icon: Zap,
                 title: "Three-agent AI analysis",
-                desc: "Claude, GPT, and Gemini can use your encrypted provider keys",
+                desc: "Claude, GPT, and Gemini use service-managed keys with your monthly spending limit",
               },
               {
                 icon: Shield,
@@ -123,7 +123,7 @@ export default function Login() {
               {
                 icon: TrendingUp,
                 title: "Supported broker connections",
-                desc: "Connect Alpaca, OANDA, or Kraken accounts; credentials are encrypted at rest",
+                desc: "Connect Alpaca, OANDA, Kraken, or Deriv accounts; credentials are encrypted at rest",
               },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4">
@@ -272,6 +272,12 @@ export default function Login() {
                       Refund Policy
                     </span>
                   </Link>
+                  {", and "}
+                  <Link href="/privacy">
+                    <span className="cursor-pointer text-primary hover:underline">
+                      Privacy Policy
+                    </span>
+                  </Link>
                   .
                 </span>
               </label>
@@ -294,6 +300,12 @@ export default function Login() {
                   <Link href="/trading-disclosures">
                     <span className="cursor-pointer text-primary hover:underline">
                       Trading Risk Disclosures
+                    </span>
+                  </Link>
+                  {", and "}
+                  <Link href="/privacy">
+                    <span className="cursor-pointer text-primary hover:underline">
+                      Privacy Policy
                     </span>
                   </Link>
                   .

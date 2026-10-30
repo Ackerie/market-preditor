@@ -35,9 +35,39 @@ export interface AiCredentialsStatus {
   providers: AiCredentialStatus[];
 }
 
-export interface SaveAiCredentialInput {
-  /** @minLength 10 */
-  apiKey: string;
+export interface AiBudgetInput {
+  /**
+   * @minimum 1
+   * @maximum 1000000
+   */
+  monthlyBudgetUsd: number;
+}
+
+export type AiBudgetStatusProviders = {
+  anthropic: boolean;
+  openai: boolean;
+  gemini: boolean;
+};
+
+export interface AiBudgetStatus {
+  monthlyBudgetUsd: number | null;
+  monthlyUsageUsd: number;
+  /** @pattern ^[0-9]{4}-[0-9]{2}$ */
+  usageMonth: string;
+  providers: AiBudgetStatusProviders;
+}
+
+export type DeleteAccountInputConfirmation =
+  (typeof DeleteAccountInputConfirmation)[keyof typeof DeleteAccountInputConfirmation];
+
+export const DeleteAccountInputConfirmation = {
+  DELETE: "DELETE",
+} as const;
+
+export interface DeleteAccountInput {
+  /** @minLength 1 */
+  password: string;
+  confirmation: DeleteAccountInputConfirmation;
 }
 
 export type ConnectBrokerInputMode =
@@ -759,6 +789,13 @@ export const GetAutoTradePnlStrategy = {
   longterm: "longterm",
   daytrade: "daytrade",
 } as const;
+
+export type ChangePasswordBody = {
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
+  confirmPassword: string;
+};
 
 export type RequestPasswordResetBody = {
   email: string;

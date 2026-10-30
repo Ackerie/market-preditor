@@ -4,14 +4,13 @@ import {
   autoTradeSettingsTable,
   autoTradeLogTable,
   autoTradeEventsTable,
-  aiCredentialsTable,
   brokerConnectionsTable,
   oandaConnectionsTable,
 } from "@workspace/db";
 import {
   getEnsembleSignal,
   type ModelVote,
-  type UserAiCredentials,
+  type ProviderTokenUsage,
 } from "../lib/aiEnsemble";
 import { UpdateAutoTradeSettingsBody } from "@workspace/api-zod";
 import {
@@ -44,8 +43,20 @@ import {
 } from "../lib/brokers";
 import { computeAutoTradePnl } from "../lib/autoTradePnl";
 import { assessTradeRisk } from "../lib/tradeRisk";
-import { decryptCredential } from "../lib/credentialCrypto";
 import { consumeAiRequest } from "../lib/aiUsage";
+import {
+  actualEnsembleMicroUsd,
+  assertProvidersConfigured,
+  estimateEnsembleMicroUsd,
+  getAiBudgetStatus,
+  reserveAiBudget,
+  settleAiBudgetReservation,
+  AiBudgetError,
+} from "../lib/aiBudget";
+import {
+  AiConfigurationError,
+  getSharedAiReadiness,
+} from "../lib/aiPricing";
 import { acquireAutoTradeLease, type CycleLease } from "../lib/autoTradeLock";
 import {
   analyzeCandles,
@@ -168,6 +179,25 @@ router.put("/auto-trade/settings", async (req, res) => {
   }
   try {
     const settings = await ensureSettings(req.user!.id);
+    if (parsed.data.enabled === true || parsed.data.dayTradeEnabled === true) {
+      const budget = await getAiBudgetStatus(req.user!.id);
+      if (budget.monthlyBudgetUsd == null) {
+        res.status(403).json({
+          error:
+            "Set a monthly AI spending limit in Account → Profile before enabling auto-trading",
+          code: "budget_required",
+        });
+        return;
+      }
+      if (Object.values(getSharedAiReadiness()).some((ready) => !ready)) {
+        res.status(503).json({
+          error:
+            "Shared AI providers are not fully configured. Contact the service operator.",
+          code: "providers_not_configured",
+        });
+        return;
+      }
+    }
     const updates: Partial<typeof autoTradeSettingsTable.$inferInsert> = {};
     if (parsed.data.enabled !== undefined)
       updates.enabled = parsed.data.enabled;
@@ -354,17 +384,6 @@ async function executeAutoTradeCycle(
   const marketAccountCache = new Map<string, AutoTradeAccount[]>();
   const allowSimulatedData =
     process.env.ALLOW_SIMULATED_TRADING_DATA === "true";
-  const credentialRows = await db
-    .select({
-      provider: aiCredentialsTable.provider,
-      apiKey: aiCredentialsTable.apiKey,
-    })
-    .from(aiCredentialsTable)
-    .where(eq(aiCredentialsTable.userId, userId));
-  const userAiCredentials: UserAiCredentials = Object.fromEntries(
-    credentialRows.map((row) => [row.provider, decryptCredential(row.apiKey)]),
-  ) as UserAiCredentials;
-
   for (let i = 0; i < candidateAssets.length; i++) {
     if (lease && !lease.isHeld()) break;
     const asset = candidateAssets[i];
@@ -386,6 +405,7 @@ async function executeAutoTradeCycle(
       confidence: number;
       reasoning: string;
       votes?: ModelVote[];
+      usage?: ProviderTokenUsage[];
       entryQuality: number;
       riskReward: number;
       stopLossPct: number;
@@ -474,22 +494,40 @@ Respond ONLY with valid JSON (no markdown):
       // The bot holds this position (for at least one user) → a single
       // model's sell vote is enough to exit (protective sell). Buys still
       // need a 2-model quorum.
-      const quotaAvailable = await Promise.all(
-        (["anthropic", "openai", "gemini"] as const).map((provider) =>
-          consumeAiRequest(userId, provider),
-        ),
+      const providers = ["anthropic", "openai", "gemini"] as const;
+      assertProvidersConfigured([...providers]);
+      const reservation = await reserveAiBudget(
+        userId,
+        estimateEnsembleMicroUsd(prompt),
       );
-      if (quotaAvailable.every(Boolean)) {
-        aiResponse = await getEnsembleSignal(
-          prompt,
-          {
+      let actualCostMicroUsd = 0;
+      try {
+        const quotaAvailable = await Promise.all(
+          providers.map((provider) => consumeAiRequest(userId, provider)),
+        );
+        if (quotaAvailable.every(Boolean)) {
+          aiResponse = await getEnsembleSignal(prompt, {
             protectiveSell: (botHolders.get(asset.symbol)?.size ?? 0) > 0,
-          },
-          userAiCredentials,
+          });
+          actualCostMicroUsd = actualEnsembleMicroUsd(
+            aiResponse.usage ?? [],
+            prompt,
+          );
+        } else {
+          aiResponse.reasoning = "Daily shared AI request limit reached.";
+        }
+      } finally {
+        await settleAiBudgetReservation(
+          { ...reservation, userId },
+          actualCostMicroUsd,
         );
       }
-    } catch {
-      /* use default */
+    } catch (error) {
+      aiResponse.reasoning =
+        error instanceof AiBudgetError ||
+        error instanceof AiConfigurationError
+          ? error.message
+          : "Shared AI analysis failed; holding this asset.";
     }
 
     const decision: "buy" | "sell" | "hold" =

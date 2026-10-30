@@ -7,6 +7,14 @@
       "destination": "https://workspaceapi-server-production-f1e3.up.railway.app/api/:path*"
     },
     {
+      "source": "/privacy",
+      "destination": "/privacy-policy.html"
+    },
+    {
+      "source": "/delete-account",
+      "destination": "/account-deletion.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12263C"/>
+      <stop offset="1" stop-color="#07111F"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="75" y1="370" x2="467" y2="93" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10D7D1"/>
+      <stop offset="1" stop-color="#8AF2C0"/>
+    </linearGradient>
+    <linearGradient id="card" x1="590" y1="87" x2="943" y2="432" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#152B40"/>
+      <stop offset="1" stop-color="#0B1725"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="500" fill="url(#bg)"/>
+  <g stroke="#93B7C7" stroke-opacity=".08" stroke-width="1">
+    <path d="M0 100h1024M0 200h1024M0 300h1024M0 400h1024"/>
+    <path d="M128 0v500M256 0v500M384 0v500M512 0v500M640 0v500M768 0v500M896 0v500"/>
+  </g>
+  <circle cx="470" cy="170" r="260" fill="#13CFC7" fill-opacity=".055"/>
+  <rect x="54" y="44" width="46" height="46" rx="14" fill="#11CFCB"/>
+  <path d="M67 77V57h5l11 12V57h5v20h-5L72 65v12z" fill="#07111F"/>
+  <text x="116" y="76" fill="#EAF7FA" font-family="Arial, sans-serif" font-size="25" font-weight="700">NexusTrade</text>
+  <text x="54" y="174" fill="#F4FBFF" font-family="Arial, sans-serif" font-size="49" font-weight="700">See the market</text>
+  <text x="54" y="232" fill="url(#accent)" font-family="Arial, sans-serif" font-size="49" font-weight="700">clearly.</text>
+  <text x="56" y="280" fill="#B2C4D0" font-family="Arial, sans-serif" font-size="19">Market insights and broker-connected trading</text>
+  <text x="56" y="308" fill="#B2C4D0" font-family="Arial, sans-serif" font-size="19">tools in one focused workspace.</text>
+  <g font-family="Arial, sans-serif" font-size="15" font-weight="600">
+    <rect x="56" y="350" width="111" height="34" rx="17" fill="#132B3A" stroke="#47D7C6" stroke-opacity=".4"/>
+    <text x="111" y="372" text-anchor="middle" fill="#C5F8EE">MULTI-MARKET</text>
+    <rect x="178" y="350" width="110" height="34" rx="17" fill="#132B3A" stroke="#47D7C6" stroke-opacity=".4"/>
+    <text x="233" y="372" text-anchor="middle" fill="#C5F8EE">AI ANALYSIS</text>
+    <rect x="299" y="350" width="115" height="34" rx="17" fill="#132B3A" stroke="#47D7C6" stroke-opacity=".4"/>
+    <text x="356" y="372" text-anchor="middle" fill="#C5F8EE">RISK CONTROLS</text>
+  </g>
+  <text x="56" y="445" fill="#7793A4" font-family="Arial, sans-serif" font-size="14">Trading involves risk. NexusTrade is not a broker or investment adviser.</text>
+  <rect x="547" y="42" width="429" height="416" rx="24" fill="url(#card)" stroke="#59D6CE" stroke-opacity=".2"/>
+  <text x="579" y="88" fill="#9CB6C7" font-family="Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="1.5">MARKET OVERVIEW</text>
+  <text x="579" y="124" fill="#F4FBFF" font-family="Arial, sans-serif" font-size="22" font-weight="700">Markets at a glance</text>
+  <g stroke="#AEC7D1" stroke-opacity=".12">
+    <path d="M580 172h362M580 224h362M580 276h362M580 328h362M580 380h362"/>
+  </g>
+  <g stroke-linecap="round">
+    <path d="M620 327v-50m0-20v-28" stroke="#22D6B8" stroke-width="5"/><rect x="610" y="262" width="20" height="48" rx="5" fill="#22D6B8"/>
+    <path d="M668 292v-41m0-18v-30" stroke="#FF7187" stroke-width="5"/><rect x="658" y="242" width="20" height="40" rx="5" fill="#FF7187"/>
+    <path d="M716 314v-67m0-20v-24" stroke="#22D6B8" stroke-width="5"/><rect x="706" y="238" width="20" height="54" rx="5" fill="#22D6B8"/>
+    <path d="M764 268v-42m0-18v-24" stroke="#22D6B8" stroke-width="5"/><rect x="754" y="214" width="20" height="40" rx="5" fill="#22D6B8"/>
+    <path d="M812 291v-58m0-20v-28" stroke="#FF7187" stroke-width="5"/><rect x="802" y="222" width="20" height="51" rx="5" fill="#FF7187"/>
+    <path d="M860 247v-47m0-18v-18" stroke="#22D6B8" stroke-width="5"/><rect x="850" y="190" width="20" height="42" rx="5" fill="#22D6B8"/>
+    <path d="M908 220v-38m0-18v-14" stroke="#22D6B8" stroke-width="5"/><rect x="898" y="169" width="20" height="43" rx="5" fill="#22D6B8"/>
+  </g>
+  <path d="m592 335 73-58 52 25 53-75 62 25 55-65 59 12" fill="none" stroke="#9AF3D1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 8" opacity=".8"/>
+  <g fill="#B2C4D0" font-family="Arial, sans-serif" font-size="12">
+    <text x="580" y="416">Illustrative chart · no investment advice</text>
+  </g>
+</svg>

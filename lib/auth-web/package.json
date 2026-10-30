@@ -7,6 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^8.0.1",
+    "@capacitor/core": "^8.5.3",
     "@workspace/api-client-react": "workspace:*"
   },
   "peerDependencies": {

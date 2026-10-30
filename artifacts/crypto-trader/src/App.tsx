@@ -27,6 +27,7 @@ import Terms from "@/pages/terms";
 import CookiePolicy from "@/pages/cookie-policy";
 import RefundPolicy from "@/pages/refund-policy";
 import TradingDisclosures from "@/pages/trading-disclosures";
+import PublicDocument from "@/pages/public-document";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -143,6 +144,24 @@ function Router() {
       <Route path="/cookies" component={CookiePolicy} />
       <Route path="/refunds" component={RefundPolicy} />
       <Route path="/trading-disclosures" component={TradingDisclosures} />
+      <Route
+        path="/privacy"
+        component={() => (
+          <PublicDocument
+            title="NexusTrade Privacy Policy"
+            documentPath="/privacy-policy.html"
+          />
+        )}
+      />
+      <Route
+        path="/delete-account"
+        component={() => (
+          <PublicDocument
+            title="Delete your NexusTrade account"
+            documentPath="/account-deletion.html"
+          />
+        )}
+      />
       <Route>
         <AuthGuard>
           <Layout>

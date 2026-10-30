@@ -31,13 +31,13 @@ Authentication is owned by the application: email/password accounts are stored i
 
 **Files:** `artifacts/api-server/src/routes/predictions.ts` (per-coin signals, Claude only), `artifacts/api-server/src/lib/aiEnsemble.ts` (auto-trade bot decisions)
 
-Predictions use Claude through the Anthropic API (`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`). The default endpoint is `https://api.anthropic.com`; use your own API key.
+Predictions use Claude through the service-managed Anthropic key. Customers do not enter provider keys. Shared requests require the customer's saved monthly AI limit and configured provider token rates; see [DEVELOPMENT.md](DEVELOPMENT.md) for the operator environment variables.
 
 Auto-trading uses a role-based ensemble: Claude reviews portfolio durability and market regime, GPT reviews technical structure and risk/reward, and Gemini acts as a skeptical risk reviewer. Their structured outputs are combined by `artifacts/api-server/src/lib/aiEnsemble.ts`, then `artifacts/api-server/src/lib/tradeRisk.ts` applies deterministic entry-quality, stop-loss, risk/reward, leverage, and data-risk checks. A model consensus cannot override the risk arbiter.
 
 The auto-trade prompt now uses broker-native bars through the adapter interface: Alpaca stock/crypto bars and OANDA instrument candles. Day trade uses 5-minute bars and long-term analysis uses 1-hour bars. If native data is unavailable, simulated candles are used only as a visible fallback and new entries are blocked unless `ALLOW_SIMULATED_TRADING_DATA=true` is explicitly enabled for local development.
 
-**Auto-trade decisions are a 3-model ensemble** (`aiEnsemble.ts`): Claude + GPT + Gemini are queried in parallel with the same prompt; a buy/sell needs ≥2 agreeing models, ties resolve to hold, and failed/unconfigured models are simply skipped (but with fewer than 2 working models the bot can never trade). Model IDs live in `aiEnsemble.ts` — change the model strings there to swap models per provider.
+**Auto-trade decisions are a 3-model ensemble** (`aiEnsemble.ts`): Claude + GPT + Gemini are queried in parallel with the same prompt; a buy/sell needs ≥2 agreeing models, ties resolve to hold, and failed models are skipped. Auto-trading requires all three shared providers to be configured. Model IDs live in `aiEnsemble.ts` — when changing a model, update its corresponding `AI_*_USD_PER_MILLION` rates from the provider's current pricing as well.
 
 ### Switching Claude models (easiest)
 

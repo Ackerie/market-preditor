@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AuthUser } from "@workspace/api-client-react";
+import {
+  apiFetch,
+  clearNativeSession,
+  isNativeApp,
+  saveNativeSession,
+} from "./native-session";
 
 export type { AuthUser };
 
@@ -25,7 +31,7 @@ export function useAuth(): AuthState {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/auth/user", { credentials: "include" })
+    apiFetch("/api/auth/user", { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<{ user: AuthUser | null }>;
@@ -52,7 +58,7 @@ export function useAuth(): AuthState {
     async (path: string, body: Record<string, string>) => {
       let response: Response;
       try {
-        response = await fetch(path, {
+        response = await apiFetch(path, {
           method: "POST",
           headers: { "content-type": "application/json" },
           credentials: "include",
@@ -70,7 +76,34 @@ export function useAuth(): AuthState {
           `Authentication service returned an unexpected response (HTTP ${response.status}). Please try again.`
         );
       }
-      const data = (await response.json()) as { user: AuthUser };
+      const data = (await response.json()) as {
+        user: AuthUser;
+        sessionToken?: string;
+      };
+      if (isNativeApp()) {
+        if (!data.sessionToken) {
+          return "The authentication service did not return a native session.";
+        }
+        try {
+          await saveNativeSession(data.sessionToken);
+        } catch (error) {
+          console.error("Unable to securely store the native session.", error);
+          try {
+            await apiFetch("/api/auth/logout", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${data.sessionToken}`,
+              },
+            });
+          } catch (logoutError) {
+            console.error(
+              "Unable to invalidate the unstored native session.",
+              logoutError,
+            );
+          }
+          return "Secure session storage is unavailable. Please try again.";
+        }
+      }
       setUser(data.user);
       return null;
     },
@@ -102,12 +135,24 @@ export function useAuth(): AuthState {
   );
 
   const logout = useCallback(() => {
-    fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    }).finally(() => {
+    void (async () => {
+      try {
+        await apiFetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch (error) {
+        console.error("Unable to invalidate the server session.", error);
+      }
+
+      try {
+        await clearNativeSession();
+      } catch (error) {
+        console.error("Unable to clear the native session.", error);
+      }
+
       window.location.href = "/login";
-    });
+    })();
   }, []);
 
   return {

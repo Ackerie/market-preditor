@@ -5,6 +5,7 @@ import {
   brokerConnectionsTable,
   oandaConnectionsTable,
   krakenConnectionsTable,
+  derivConnectionsTable,
   type BrokerConnection,
   type OandaConnection,
 } from "@workspace/db";
@@ -15,12 +16,15 @@ import {
   ConnectOandaBody,
   UpdateOandaAutoTradeSettingsBody,
   ConnectKrakenBody,
+  ConnectDerivBody,
 } from "@workspace/api-zod";
 import { encryptCredential, decryptCredential } from "../lib/credentialCrypto";
 import { alpaca } from "../lib/alpaca";
 import { oanda } from "../lib/oanda";
 import { krakenPrivate } from "../lib/kraken";
 import { krakenAdapter } from "../lib/brokers/krakenAdapter";
+import { derivAdapter } from "../lib/brokers/derivAdapter";
+import { derivAuthorize } from "../lib/deriv";
 import {
   beginOrderRequest,
   completeOrderRequest,
@@ -739,6 +743,181 @@ router.put("/broker/kraken/auto-trade", async (req: Request, res: Response) => {
     "Kraken auto-trade settings updated",
   );
   res.json(krakenAutoTradePayload(updated));
+});
+
+router.post("/broker/deriv/connect", async (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return;
+  const parsed = ConnectDerivBody.safeParse(req.body);
+  if (!parsed.success) {
+    res
+      .status(400)
+      .json({ error: "Invalid request body: API token is required" });
+    return;
+  }
+  const { apiToken } = parsed.data;
+
+  let account: Awaited<ReturnType<typeof derivAuthorize>>;
+  try {
+    account = await derivAuthorize(apiToken);
+  } catch (error) {
+    req.log.warn({ error }, "Deriv credential validation failed");
+    res.status(400).json({
+      error:
+        "Deriv rejected this API token. Check the token and that it has at least Read and Trade scope.",
+    });
+    return;
+  }
+
+  if (account.currency.toUpperCase() !== "USD") {
+    req.log.warn(
+      { userId: req.user!.id, currency: account.currency },
+      "Unsupported Deriv account currency",
+    );
+    res
+      .status(400)
+      .json({ error: "Only USD-denominated Deriv accounts are supported." });
+    return;
+  }
+
+  const mode = account.isVirtual ? "demo" : "live";
+  const userId = req.user!.id;
+  try {
+    await db
+      .insert(derivConnectionsTable)
+      .values({
+        userId,
+        apiToken: encryptCredential(apiToken),
+        mode,
+        loginId: account.loginId,
+      })
+      .onConflictDoUpdate({
+        target: derivConnectionsTable.userId,
+        set: {
+          apiToken: encryptCredential(apiToken),
+          mode,
+          loginId: account.loginId,
+        },
+      });
+  } catch (error) {
+    req.log.error({ error, userId }, "Could not save Deriv credentials");
+    res.status(500).json({
+      error:
+        "Deriv token was verified but could not be saved. Apply the latest database schema and try again.",
+    });
+    return;
+  }
+
+  res.json({
+    connected: true,
+    mode,
+    apiTokenMasked: maskKey(apiToken),
+    loginId: account.loginId,
+    cash: account.balance,
+    equity: account.balance,
+  });
+});
+
+router.get("/broker/deriv/status", async (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return;
+  const [row] = await db
+    .select()
+    .from(derivConnectionsTable)
+    .where(eq(derivConnectionsTable.userId, req.user!.id));
+  if (!row) {
+    res.json({ connected: false });
+    return;
+  }
+  const apiToken = decryptCredential(row.apiToken);
+  const balances = await derivAdapter.getBalances({
+    apiToken,
+    mode: row.mode,
+    loginId: row.loginId,
+  });
+  res.json({
+    connected: true,
+    mode: row.mode,
+    apiTokenMasked: maskKey(apiToken),
+    loginId: row.loginId,
+    cash: balances?.cashUsd,
+    equity: balances?.equityUsd,
+  });
+});
+
+router.delete(
+  "/broker/deriv/disconnect",
+  async (req: Request, res: Response) => {
+    if (!requireAuth(req, res)) return;
+    await db
+      .delete(derivConnectionsTable)
+      .where(eq(derivConnectionsTable.userId, req.user!.id));
+    res.json({ success: true });
+  },
+);
+
+function derivAutoTradePayload(row: typeof derivConnectionsTable.$inferSelect) {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    enabled: row.autoTradeEnabled,
+    maxPerTradeUsd: parseFloat(row.autoTradeMaxUsd),
+    dailyLimitUsd: parseFloat(row.autoTradeDailyLimitUsd),
+    spentTodayUsd: row.spendDate === today ? parseFloat(row.spentTodayUsd) : 0,
+    mode: row.mode as "demo" | "live",
+  };
+}
+
+router.get("/broker/deriv/auto-trade", async (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return;
+  const [row] = await db
+    .select()
+    .from(derivConnectionsTable)
+    .where(eq(derivConnectionsTable.userId, req.user!.id));
+  if (!row) {
+    res.status(400).json({ error: "No Deriv account connected" });
+    return;
+  }
+  res.json(derivAutoTradePayload(row));
+});
+
+router.put("/broker/deriv/auto-trade", async (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return;
+  const parsed = UpdateBrokerAutoTradeSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid settings" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(derivConnectionsTable)
+    .where(eq(derivConnectionsTable.userId, req.user!.id));
+  if (!row) {
+    res.status(400).json({ error: "No Deriv account connected" });
+    return;
+  }
+  const updates: Partial<typeof derivConnectionsTable.$inferInsert> = {};
+  if (parsed.data.enabled !== undefined) {
+    updates.autoTradeEnabled = parsed.data.enabled;
+  }
+  if (parsed.data.maxPerTradeUsd !== undefined) {
+    updates.autoTradeMaxUsd = parsed.data.maxPerTradeUsd.toFixed(2);
+  }
+  if (parsed.data.dailyLimitUsd !== undefined) {
+    updates.autoTradeDailyLimitUsd = parsed.data.dailyLimitUsd.toFixed(2);
+  }
+  const [updated] = await db
+    .update(derivConnectionsTable)
+    .set(updates)
+    .where(eq(derivConnectionsTable.id, row.id))
+    .returning();
+  req.log.info(
+    {
+      userId: req.user!.id,
+      enabled: updated.autoTradeEnabled,
+      maxPerTradeUsd: updated.autoTradeMaxUsd,
+      dailyLimitUsd: updated.autoTradeDailyLimitUsd,
+    },
+    "Deriv auto-trade settings updated",
+  );
+  res.json(derivAutoTradePayload(updated));
 });
 
 export default router;

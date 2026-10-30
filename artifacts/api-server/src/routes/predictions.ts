@@ -1,11 +1,15 @@
 import { Router } from "express";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { consumeAiRequest } from "../lib/aiUsage";
 import {
-  createAnthropicClient,
-  anthropic,
-} from "@workspace/integrations-anthropic-ai";
-import { db, aiCredentialsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
-import { decryptCredential } from "../lib/credentialCrypto";
+  actualAnthropicMicroUsd,
+  assertProvidersConfigured,
+  estimateAnthropicPredictionMicroUsd,
+  reserveAiBudget,
+  settleAiBudgetReservation,
+  AiBudgetError,
+} from "../lib/aiBudget";
+import { AiConfigurationError } from "../lib/aiPricing";
 import {
   getCandles,
   getLivePrice,
@@ -40,38 +44,7 @@ router.get("/predictions/:symbol", async (req, res) => {
     currentPrice,
   );
 
-  const { consumeAiRequest } = await import("../lib/aiUsage");
-  if (!(await consumeAiRequest(req.user!.id, "anthropic"))) {
-    res.status(429).json({ error: "Daily AI prediction limit reached" });
-    return;
-  }
-
-  let predictionClient = anthropic;
-  const [credential] = await db
-    .select({ apiKey: aiCredentialsTable.apiKey })
-    .from(aiCredentialsTable)
-    .where(
-      and(
-        eq(aiCredentialsTable.userId, req.user!.id),
-        eq(aiCredentialsTable.provider, "anthropic"),
-      ),
-    )
-    .limit(1);
-  if (credential) {
-    predictionClient = createAnthropicClient(
-      decryptCredential(credential.apiKey),
-      process.env.ANTHROPIC_BASE_URL,
-    );
-  }
-
-  try {
-    const message = await predictionClient.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1200,
-      messages: [
-        {
-          role: "user",
-          content: `You are a disciplined crypto swing-trading analyst. Analyze ${coin.name} (${symbol}) and produce a risk-adjusted 7-day prediction.
+  const prompt = `You are a disciplined crypto swing-trading analyst. Analyze ${coin.name} (${symbol}) and produce a risk-adjusted 7-day prediction.
 
 Current data:
 - Current Price: $${currentPrice.toFixed(2)}
@@ -98,79 +71,141 @@ Provide a JSON response with exactly these fields:
   "targetDate": a date string 7 days from today in ISO format
 }
 
-Only respond with valid JSON, no markdown or extra text.`,
+Only respond with valid JSON, no markdown or extra text.`;
+
+  let reservation: Awaited<ReturnType<typeof reserveAiBudget>>;
+  try {
+    assertProvidersConfigured(["anthropic"]);
+    reservation = await reserveAiBudget(
+      req.user!.id,
+      estimateAnthropicPredictionMicroUsd(prompt),
+    );
+  } catch (error) {
+    if (error instanceof AiBudgetError) {
+      res.status(error.code === "budget_required" ? 403 : 429).json({
+        error: error.message,
+        code: error.code,
+      });
+      return;
+    }
+    if (error instanceof AiConfigurationError) {
+      req.log?.error({ err: error }, "Shared AI provider is not configured");
+      res.status(503).json({ error: "Shared AI is not configured" });
+      return;
+    }
+    throw error;
+  }
+
+  let actualCostMicroUsd = 0;
+  let prediction: {
+    symbol: string;
+    signal: string;
+    confidence: number;
+    reasoning: string;
+    targetPrice: number;
+    targetDate: string;
+    currentPrice: number;
+  } | null = null;
+  let responseError: { status: number; message: string } | null = null;
+  try {
+    if (!(await consumeAiRequest(req.user!.id, "anthropic"))) {
+      responseError = {
+        status: 429,
+        message: "Daily AI prediction limit reached",
+      };
+    } else {
+      const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1200,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
         },
       ],
     });
+      actualCostMicroUsd = actualAnthropicMicroUsd(
+        {
+          provider: "anthropic",
+          inputTokens: message.usage.input_tokens,
+          outputTokens: message.usage.output_tokens,
+        },
+        prompt,
+      );
 
-    const content = message.content[0];
-    if (content.type !== "text") {
-      throw new Error("Unexpected response type");
+      const content = message.content[0];
+      if (content.type !== "text") {
+        throw new Error("Unexpected response type");
+      }
+
+      const cleaned = content.text
+        .trim()
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "");
+      const parsed = JSON.parse(cleaned) as {
+        signal?: unknown;
+        confidence?: unknown;
+        reasoning?: unknown;
+        targetPrice?: unknown;
+        targetDate?: unknown;
+      };
+      const validSignals = new Set([
+        "strong_buy",
+        "buy",
+        "hold",
+        "sell",
+        "strong_sell",
+      ]);
+      const signal = validSignals.has(String(parsed.signal))
+        ? String(parsed.signal)
+        : "hold";
+      const confidence = Number(parsed.confidence);
+      const targetPrice = Number(parsed.targetPrice);
+      if (
+        !Number.isFinite(confidence) ||
+        confidence < 0 ||
+        confidence > 100 ||
+        !Number.isFinite(targetPrice) ||
+        targetPrice <= 0 ||
+        typeof parsed.reasoning !== "string" ||
+        parsed.reasoning.trim().length === 0
+      ) {
+        throw new Error("Anthropic returned an invalid prediction shape");
+      }
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + 7);
+
+      prediction = {
+        symbol,
+        signal,
+        confidence,
+        reasoning: parsed.reasoning,
+        targetPrice,
+        targetDate:
+          typeof parsed.targetDate === "string" && parsed.targetDate
+            ? parsed.targetDate
+            : targetDate.toISOString(),
+        currentPrice,
+      };
     }
-
-    const cleaned = content.text
-      .trim()
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/i, "");
-    const parsed = JSON.parse(cleaned) as {
-      signal?: unknown;
-      confidence?: unknown;
-      reasoning?: unknown;
-      targetPrice?: unknown;
-      targetDate?: unknown;
-    };
-    const validSignals = new Set([
-      "strong_buy",
-      "buy",
-      "hold",
-      "sell",
-      "strong_sell",
-    ]);
-    const signal = validSignals.has(String(parsed.signal))
-      ? String(parsed.signal)
-      : "hold";
-    const confidence = Number(parsed.confidence);
-    const targetPrice = Number(parsed.targetPrice);
-    if (
-      !Number.isFinite(confidence) ||
-      confidence < 0 ||
-      confidence > 100 ||
-      !Number.isFinite(targetPrice) ||
-      targetPrice <= 0 ||
-      typeof parsed.reasoning !== "string" ||
-      parsed.reasoning.trim().length === 0
-    ) {
-      throw new Error("Anthropic returned an invalid prediction shape");
-    }
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + 7);
-
-    res.json({
-      symbol,
-      signal,
-      confidence,
-      reasoning: parsed.reasoning,
-      targetPrice,
-      targetDate:
-        typeof parsed.targetDate === "string" && parsed.targetDate
-          ? parsed.targetDate
-          : targetDate.toISOString(),
-      currentPrice,
-    });
   } catch (err) {
     req.log?.error({ err }, "AI prediction failed");
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + 7);
-    res.json({
-      symbol,
-      signal: "hold" as const,
-      confidence: 50,
-      reasoning: `${coin.name} is not producing a validated AI signal. Technical context is ${technicalAnalysis.regime} with RSI ${technicalAnalysis.rsi14}, momentum ${technicalAnalysis.momentum20Pct >= 0 ? "+" : ""}${technicalAnalysis.momentum20Pct.toFixed(2)}%, and ${technicalAnalysis.volatilityPct.toFixed(2)}% ATR volatility. Hold until the AI provider returns a valid, risk-adjusted analysis.`,
-      targetPrice: currentPrice,
-      targetDate: targetDate.toISOString(),
-      currentPrice,
-    });
+    responseError = {
+      status: 502,
+      message: "AI prediction failed; no validated prediction is available",
+    };
+  } finally {
+    await settleAiBudgetReservation(
+      { ...reservation, userId: req.user!.id },
+      actualCostMicroUsd,
+    );
+  }
+
+  if (responseError) {
+    res.status(responseError.status).json({ error: responseError.message });
+  } else if (prediction) {
+    res.json(prediction);
   }
 });
 

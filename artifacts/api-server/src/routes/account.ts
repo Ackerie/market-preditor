@@ -1,15 +1,29 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import rateLimit from "express-rate-limit";
 import {
   db,
   aiCredentialsTable,
+  sessionsTable,
   usersTable,
   notificationPrefsTable,
 } from "@workspace/db";
 import { UpdateNotificationPrefsBody } from "@workspace/api-zod";
-import { encryptCredential } from "../lib/credentialCrypto";
+import { clearSession, verifyPassword } from "../lib/auth";
+import {
+  getAiBudgetStatus,
+  saveAiMonthlyBudget,
+} from "../lib/aiBudget";
+import { getSharedAiReadiness } from "../lib/aiPricing";
 
 const router: IRouter = Router();
+const accountDeletionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Too many account deletion attempts. Try again later." },
+});
 const AI_PROVIDERS = ["anthropic", "openai", "gemini"] as const;
 type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -25,11 +39,59 @@ function isAiProvider(value: string): value is AiProvider {
   return AI_PROVIDERS.includes(value as AiProvider);
 }
 
-function maskKey(value: string): string {
-  return value.length <= 8
-    ? "Configured"
-    : `${value.slice(0, 4)}...${value.slice(-4)}`;
-}
+router.delete(
+  "/account",
+  accountDeletionLimiter,
+  async (req: Request, res: Response) => {
+    if (!requireAuth(req, res)) return;
+
+    const password =
+      typeof req.body?.password === "string" ? req.body.password : "";
+    const confirmation =
+      typeof req.body?.confirmation === "string"
+        ? req.body.confirmation
+        : "";
+    if (confirmation !== "DELETE") {
+      res
+        .status(400)
+        .json({ error: 'Type "DELETE" to confirm account deletion' });
+      return;
+    }
+
+    const userId = req.user!.id;
+    const [user] = await db
+      .select({ id: usersTable.id, passwordHash: usersTable.passwordHash })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (
+      !user?.passwordHash ||
+      !(await verifyPassword(password, user.passwordHash))
+    ) {
+      res.status(401).json({ error: "Current password is incorrect" });
+      return;
+    }
+
+    const deleted = await db.transaction(async (transaction) => {
+      await transaction
+        .delete(sessionsTable)
+        .where(sql`${sessionsTable.sess}->'user'->>'id' = ${userId}`);
+      const [deletedUser] = await transaction
+        .delete(usersTable)
+        .where(eq(usersTable.id, userId))
+        .returning({ id: usersTable.id });
+      return Boolean(deletedUser);
+    });
+
+    if (!deleted) {
+      res.status(404).json({ error: "Account not found" });
+      return;
+    }
+
+    await clearSession(res);
+    res.json({ success: true });
+  },
+);
 
 router.get("/account/ai-credentials", async (req: Request, res: Response) => {
   if (!requireAuth(req, res)) return;
@@ -46,34 +108,44 @@ router.get("/account/ai-credentials", async (req: Request, res: Response) => {
       return {
         provider,
         configured: Boolean(row),
-        maskedKey: row ? maskKey(row.apiKey) : null,
+        maskedKey: row ? "Configured" : null,
       };
     }),
   });
+});
+
+router.get("/account/ai-budget", async (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return;
+  const budget = await getAiBudgetStatus(req.user!.id);
+  res.json({ ...budget, providers: getSharedAiReadiness() });
+});
+
+router.put("/account/ai-budget", async (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return;
+  const monthlyBudgetUsd = Number(req.body?.monthlyBudgetUsd);
+  if (
+    !Number.isFinite(monthlyBudgetUsd) ||
+    monthlyBudgetUsd < 1 ||
+    monthlyBudgetUsd > 1_000_000
+  ) {
+    res.status(400).json({
+      error: "Monthly AI budget must be between $1 and $1,000,000",
+    });
+    return;
+  }
+  await saveAiMonthlyBudget(req.user!.id, monthlyBudgetUsd);
+  const budget = await getAiBudgetStatus(req.user!.id);
+  res.json({ ...budget, providers: getSharedAiReadiness() });
 });
 
 router.put(
   "/account/ai-credentials/:provider",
   async (req: Request, res: Response) => {
     if (!requireAuth(req, res)) return;
-    const provider = String(req.params.provider);
-    const apiKey =
-      typeof req.body?.apiKey === "string" ? req.body.apiKey.trim() : "";
-    if (!isAiProvider(provider) || apiKey.length < 10) {
-      res
-        .status(400)
-        .json({ error: "A valid AI provider and API key are required" });
-      return;
-    }
-    const encryptedKey = encryptCredential(apiKey);
-    await db
-      .insert(aiCredentialsTable)
-      .values({ userId: req.user!.id, provider, apiKey: encryptedKey })
-      .onConflictDoUpdate({
-        target: [aiCredentialsTable.userId, aiCredentialsTable.provider],
-        set: { apiKey: encryptedKey, updatedAt: new Date() },
-      });
-    res.json({ provider, configured: true, maskedKey: maskKey(apiKey) });
+    res.status(410).json({
+      error:
+        "Personal AI keys are disabled. Shared provider keys are managed by the service operator.",
+    });
   },
 );
 

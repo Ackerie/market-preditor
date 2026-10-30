@@ -101,18 +101,22 @@ BASE_PATH=/api
 APP_URL=http://localhost:5173
 
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/nexustrade
-# Get an API key at: https://console.anthropic.com
+# Shared AI keys are operator-managed server secrets
 ANTHROPIC_BASE_URL=https://api.anthropic.com
-ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE
+ANTHROPIC_API_KEY=your-anthropic-key
 
-# Auto-trade signals use a 3-model ensemble (Claude + GPT + Gemini).
-# Missing providers are skipped gracefully (their vote is dropped), so these
-# are optional — but with only Claude configured, the 2-model buy/sell quorum
-# can never be met and the bot will always hold.
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=sk-YOUR_OPENAI_KEY
+OPENAI_API_KEY=your-openai-key
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com
-GEMINI_API_KEY=YOUR_GEMINI_KEY
+GEMINI_API_KEY=your-gemini-key
+
+# Required: current model token rates in USD per 1 million tokens
+AI_ANTHROPIC_INPUT_USD_PER_MILLION=your-current-rate
+AI_ANTHROPIC_OUTPUT_USD_PER_MILLION=your-current-rate
+AI_OPENAI_INPUT_USD_PER_MILLION=your-current-rate
+AI_OPENAI_OUTPUT_USD_PER_MILLION=your-current-rate
+AI_GEMINI_INPUT_USD_PER_MILLION=your-current-rate
+AI_GEMINI_OUTPUT_USD_PER_MILLION=your-current-rate
 
 SESSION_SECRET=any-long-random-string-you-make-up
 
@@ -123,13 +127,15 @@ SESSION_SECRET=any-long-random-string-you-make-up
 
 > **How the API server reads this file**: the `start` script uses Node's `--env-file=.env` option. The API `dev` script builds the bundle and starts the server. Run the database push separately during setup. Do not commit this file.
 
-> **SESSION_SECRET matters more than it looks**: it derives the AES-256-GCM encryption key for stored broker credentials — both Alpaca API keys and OANDA tokens (`artifacts/api-server/src/lib/credentialCrypto.ts`). If you change it, every user's saved broker connection becomes unreadable and they must reconnect. Pick one value and keep it stable.
+> **Shared AI costs**: all three shared provider keys and all six current model token rates are required. Set rate values from the providers' current pricing for the models in `artifacts/api-server/src/lib/aiEnsemble.ts`; review them whenever a model or provider price changes. Each customer must save a monthly limit in Account → Profile before shared AI or auto-trading can run. The suggested $100 limit is not saved automatically. Customer limits do not cap total business spend, so set provider-side billing alerts or limits separately.
+
+> **SESSION_SECRET matters more than it looks**: it derives the AES-256-GCM encryption key for stored broker credentials — both Alpaca API keys and OANDA tokens (`artifacts/api-server/src/lib/credentialCrypto.ts`) — and any legacy personal AI keys retained by existing accounts. If you change it, every user's saved broker connection becomes unreadable and they must reconnect. Pick one value and keep it stable.
 
 > **Authentication**: users register and sign in with their own email and password, including a required password confirmation during signup. Passwords are stored as salted `scrypt` hashes in the PostgreSQL `users.password_hash` column; the browser receives only an HTTP-only session cookie. The login screen includes a forgot-password flow that sends a one-hour reset link through Resend.
 
 > **Email alerts and password reset**: email delivery uses Resend's HTTPS API. Set `RESEND_API_KEY`, `ALERT_FROM_EMAIL` to a verified sender, and `APP_URL` to the frontend's public URL so password reset links open the correct site. The reset endpoint still returns a generic response so it does not reveal whether an email exists.
 
-> **Trading bot safety**: the bot uses three role-based AI analysts plus a deterministic risk arbiter. It requests broker-native bars for connected opted-in accounts and blocks new entries when it must fall back to simulated data. Use Alpaca paper mode or OANDA practice mode while developing trading changes.
+> **Trading bot safety**: the bot uses three shared role-based AI analysts plus a deterministic risk arbiter. It requests broker-native bars for connected opted-in accounts and blocks new entries when it must fall back to simulated data. Use Alpaca paper mode or OANDA practice mode while developing trading changes.
 
 ### Frontend — create `artifacts/crypto-trader/.env`
 

@@ -695,7 +695,7 @@ export default function AutoTrade() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
-      .then((resp) => {
+      .then(async (resp) => {
         if (resp.status === 401) {
           toast({
             variant: "destructive",
@@ -704,17 +704,23 @@ export default function AutoTrade() {
           });
           return;
         }
-        if (!resp.ok) throw new Error(`Save failed (${resp.status})`);
+        if (!resp.ok) {
+          const result = await resp.json().catch(() => ({}));
+          throw new Error(
+            result.error ?? `Save failed (${resp.status})`,
+          );
+        }
         toast({ title: "Settings saved" });
         queryClient.invalidateQueries({
           queryKey: getGetAutoTradeSettingsQueryKey(),
         });
       })
-      .catch(() =>
+      .catch((error: unknown) =>
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to save settings.",
+          description:
+            error instanceof Error ? error.message : "Failed to save settings.",
         }),
       );
   };
@@ -809,16 +815,23 @@ export default function AutoTrade() {
           runStartInFlight.current = false;
           return;
         }
-        if (!resp.ok)
-          throw new Error(`Failed to apply settings (${resp.status})`);
+        if (!resp.ok) {
+          const result = await resp.json().catch(() => ({}));
+          throw new Error(
+            result.error ?? `Failed to apply settings (${resp.status})`,
+          );
+        }
         queryClient.invalidateQueries({
           queryKey: getGetAutoTradeSettingsQueryKey(),
         });
-      } catch {
+      } catch (error) {
         toast({
           variant: "destructive",
           title: "Couldn't apply settings",
-          description: "Your settings weren't saved, so the run was cancelled.",
+          description:
+            error instanceof Error
+              ? `${error.message} Your run was cancelled.`
+              : "Your settings weren't saved, so the run was cancelled.",
         });
         runStartInFlight.current = false;
         return;

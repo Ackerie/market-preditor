@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   return {
     selectRows: [] as any[],
     krakenRows: [] as any[],
+    derivRows: [] as any[],
     washTradeRows: [] as any[],
     reserveResults: [] as any[][],
     updateCalls: [] as Array<{ set: any }>,
@@ -28,7 +29,9 @@ vi.mock("@workspace/db", () => {
           const result: any = Promise.resolve(
             table?.name === "kraken_connections"
               ? mocks.krakenRows
-              : mocks.selectRows,
+              : table?.name === "deriv_connections"
+                ? mocks.derivRows
+                : mocks.selectRows,
           );
           result.limit = async () => mocks.washTradeRows;
           return result;
@@ -85,6 +88,14 @@ vi.mock("@workspace/db", () => {
       spentTodayUsd: "spentTodayUsd",
       autoTradeDailyLimitUsd: "autoTradeDailyLimitUsd",
     },
+    derivConnectionsTable: {
+      name: "deriv_connections",
+      id: "id",
+      autoTradeEnabled: "autoTradeEnabled",
+      spendDate: "spendDate",
+      spentTodayUsd: "spentTodayUsd",
+      autoTradeDailyLimitUsd: "autoTradeDailyLimitUsd",
+    },
     autoTradeEventsTable: { name: "auto_trade_events", createdAt: "createdAt" },
     autoTradeNotificationsTable: {
       name: "auto_trade_notifications",
@@ -133,6 +144,18 @@ vi.mock("./kraken", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./kraken")>()),
   krakenPrivate: mocks.krakenPrivate,
   krakenPublic: mocks.krakenPublic,
+}));
+
+vi.mock("./deriv", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./deriv")>()),
+  derivAuthorize: vi.fn(),
+  derivBalance: vi.fn().mockResolvedValue({ balance: 0, currency: "USD" }),
+  derivPortfolio: vi.fn().mockResolvedValue([]),
+  derivBuyMultiplier: vi.fn(),
+  derivSellContract: vi.fn(),
+  derivProposal: vi.fn().mockResolvedValue(1),
+  derivCandles: vi.fn().mockResolvedValue([]),
+  derivProfitTable: vi.fn().mockResolvedValue([]),
 }));
 
 import { executeRealTrades, pruneOldAutoTradeEvents } from "./realAutoTrade";
@@ -188,6 +211,8 @@ function krakenConnRow(overrides: Partial<Record<string, any>> = {}) {
 
 beforeEach(() => {
   mocks.selectRows = [];
+  mocks.krakenRows = [];
+  mocks.derivRows = [];
   mocks.washTradeRows = [];
   mocks.reserveResults = [];
   mocks.updateCalls = [];

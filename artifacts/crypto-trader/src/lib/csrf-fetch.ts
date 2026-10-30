@@ -1,3 +1,5 @@
+import { apiFetch, isNativeApp } from "@workspace/auth-web";
+
 export function csrfFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const token = document.cookie
     .split(";")
@@ -13,10 +15,10 @@ export function csrfFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   ) {
     headers.set("x-csrf-token", decodeURIComponent(token));
   }
-  return fetch(input, {
+  return apiFetch(input, {
     ...init,
     headers,
-    credentials: init.credentials ?? "include",
+    credentials: init.credentials ?? (isNativeApp() ? "omit" : "include"),
   }).then((response) => {
     if (response.status === 428) {
       window.dispatchEvent(new CustomEvent("nexustrade:step-up-required"));

@@ -533,6 +533,28 @@ export const LogoutAuthUserResponse = zod.object({
 });
 
 /**
+ * @summary Change the authenticated user's password
+ */
+export const ChangePasswordHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+export const changePasswordBodyNewPasswordMin = 8;
+
+export const ChangePasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string().min(changePasswordBodyNewPasswordMin),
+  confirmPassword: zod.string(),
+});
+
+export const ChangePasswordResponse = zod.object({
+  message: zod.string(),
+});
+
+/**
  * @summary Request a password reset email
  */
 export const RequestPasswordResetBody = zod.object({
@@ -569,6 +591,19 @@ export const LogoutBrowserSessionHeader = zod.object({
 });
 
 /**
+ * @summary Permanently delete the authenticated user's account and application data
+ */
+
+export const DeleteAccountBody = zod.object({
+  password: zod.string().min(1),
+  confirmation: zod.enum(["DELETE"]),
+});
+
+export const DeleteAccountResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
  * @summary Get the current user's notification preferences
  */
 export const GetNotificationPrefsResponse = zod.object({
@@ -599,7 +634,7 @@ export const UpdateNotificationPrefsResponse = zod.object({
 });
 
 /**
- * @summary Get the current user's configured AI providers
+ * @summary Get legacy personal AI credential status
  */
 export const GetAiCredentialsResponse = zod.object({
   providers: zod.array(
@@ -612,22 +647,10 @@ export const GetAiCredentialsResponse = zod.object({
 });
 
 /**
- * @summary Replace one personal AI provider API key
+ * @summary Disabled; personal AI keys are no longer accepted
  */
 export const SaveAiCredentialParams = zod.object({
   provider: zod.enum(["anthropic", "openai", "gemini"]),
-});
-
-export const saveAiCredentialBodyApiKeyMin = 10;
-
-export const SaveAiCredentialBody = zod.object({
-  apiKey: zod.string().min(saveAiCredentialBodyApiKeyMin),
-});
-
-export const SaveAiCredentialResponse = zod.object({
-  provider: zod.enum(["anthropic", "openai", "gemini"]),
-  configured: zod.boolean(),
-  maskedKey: zod.string().nullable(),
 });
 
 /**
@@ -639,6 +662,51 @@ export const DeleteAiCredentialParams = zod.object({
 
 export const DeleteAiCredentialResponse = zod.object({
   success: zod.boolean(),
+});
+
+/**
+ * @summary Get customer monthly shared AI limit and usage
+ */
+export const getAiBudgetResponseUsageMonthRegExp = new RegExp(
+  "^[0-9]{4}-[0-9]{2}$",
+);
+
+export const GetAiBudgetResponse = zod.object({
+  monthlyBudgetUsd: zod.number().nullable(),
+  monthlyUsageUsd: zod.number(),
+  usageMonth: zod.string().regex(getAiBudgetResponseUsageMonthRegExp),
+  providers: zod.object({
+    anthropic: zod.boolean(),
+    openai: zod.boolean(),
+    gemini: zod.boolean(),
+  }),
+});
+
+/**
+ * @summary Set the customer's monthly shared AI spending limit
+ */
+export const updateAiBudgetBodyMonthlyBudgetUsdMax = 1000000;
+
+export const UpdateAiBudgetBody = zod.object({
+  monthlyBudgetUsd: zod
+    .number()
+    .min(1)
+    .max(updateAiBudgetBodyMonthlyBudgetUsdMax),
+});
+
+export const updateAiBudgetResponseUsageMonthRegExp = new RegExp(
+  "^[0-9]{4}-[0-9]{2}$",
+);
+
+export const UpdateAiBudgetResponse = zod.object({
+  monthlyBudgetUsd: zod.number().nullable(),
+  monthlyUsageUsd: zod.number(),
+  usageMonth: zod.string().regex(updateAiBudgetResponseUsageMonthRegExp),
+  providers: zod.object({
+    anthropic: zod.boolean(),
+    openai: zod.boolean(),
+    gemini: zod.boolean(),
+  }),
 });
 
 /**

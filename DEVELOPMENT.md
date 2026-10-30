@@ -49,6 +49,13 @@ OPENAI_API_KEY=your-openai-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 GEMINI_API_KEY=your-gemini-key
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+# Required shared-AI budget accounting: current model rates in USD per 1M tokens
+AI_ANTHROPIC_INPUT_USD_PER_MILLION=
+AI_ANTHROPIC_OUTPUT_USD_PER_MILLION=
+AI_OPENAI_INPUT_USD_PER_MILLION=
+AI_OPENAI_OUTPUT_USD_PER_MILLION=
+AI_GEMINI_INPUT_USD_PER_MILLION=
+AI_GEMINI_OUTPUT_USD_PER_MILLION=
 # Optional per-user daily AI request limit (default: 500 per provider)
 # AI_DAILY_REQUEST_LIMIT=500
 
@@ -67,7 +74,9 @@ PORT=5173
 BASE_PATH=/
 ```
 
-Never commit either `.env` file. Keep `SESSION_SECRET` stable because it encrypts stored broker and AI credentials. The API encrypts legacy plaintext credential rows before it starts listening; run `pnpm --filter @workspace/api-server run build` followed by `pnpm --filter @workspace/api-server run migrate-credentials` to run that migration manually.
+Never commit either `.env` file. Keep `SESSION_SECRET` stable because it encrypts stored broker credentials and legacy personal AI keys. The API encrypts legacy plaintext credential rows before it starts listening; run `pnpm --filter @workspace/api-server run build` followed by `pnpm --filter @workspace/api-server run migrate-credentials` to run that migration manually.
+
+The shared AI ensemble requires the Anthropic, OpenAI, and Gemini server-side keys and all six token-rate variables above. Set the rates to match the currently deployed models and your provider agreements; they are used for monthly usage estimates and must be reviewed when model versions or provider prices change. The $100 amount shown in the UI is only a suggested starting value: each customer must save their own monthly limit. Per-customer limits do not cap the company's total provider bill; configure separate billing alerts or spending controls with each AI vendor.
 
 ### 3. Prepare PostgreSQL
 
@@ -105,6 +114,73 @@ On Windows PowerShell, temporary overrides use this form:
 $env:PORT="8080"; $env:BASE_PATH="/api"; pnpm --filter @workspace/api-server run dev
 $env:PORT="5173"; $env:BASE_PATH="/"; pnpm --filter @workspace/crypto-trader run dev
 ```
+
+## Build the Android app
+
+The Android app bundles the same Vite frontend used by the website. Browser builds
+continue to use relative `/api` requests and cookie sessions; native builds call
+the Railway API directly and keep their bearer session in Android secure storage.
+
+1. Install Android Studio with the Android SDK and JDK 21.
+2. Generate the NexusTrade launcher, splash, and Play Store artwork:
+
+   ```powershell
+   pnpm --filter @workspace/crypto-trader run artwork:android
+   ```
+
+   This uses Microsoft Edge or Chrome to render the checked-in SVG files in
+   `artifacts/crypto-trader/assets/`. The Play Store icon and feature graphic
+   are saved under `artifacts/crypto-trader/store-assets/`.
+
+3. Copy `artifacts/crypto-trader/.env.example` to
+   `artifacts/crypto-trader/.env` and set `VITE_API_BASE_URL` to the HTTPS URL
+   of the deployed API. This value is public configuration, not a secret.
+4. From the repository root, build and synchronize the native project:
+
+   ```bash
+   pnpm --filter @workspace/crypto-trader run build:android
+   ```
+
+5. To sign the Play release, create an upload keystore outside the repository.
+   With JDK 21 installed, generate it using `keytool` and keep its passwords
+   private:
+
+   ```powershell
+   keytool -genkeypair -v -keystore "$HOME\nexustrade-upload.jks" -alias nexustrade-upload -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+   Set `ANDROID_UPLOAD_STORE_FILE`, `ANDROID_UPLOAD_STORE_PASSWORD`,
+   `ANDROID_UPLOAD_KEY_ALIAS`, and `ANDROID_UPLOAD_KEY_PASSWORD` in the
+   environment used by Gradle. Do not commit the keystore or passwords. Then:
+
+   ```powershell
+   pnpm --filter @workspace/crypto-trader run bundle:android
+   ```
+
+   The signed bundle is written to
+   `artifacts/crypto-trader/android/app/build/outputs/bundle/release/`.
+   Enable Play App Signing in Play Console and keep a protected backup of the
+   upload key.
+
+6. Open the Android project in Android Studio:
+
+   ```bash
+   pnpm --filter @workspace/crypto-trader run android:open
+   ```
+
+   Use Android Studio to run on a physical device or emulator. Test account
+   creation, sign-in, secure session storage, logout, broker linking, and
+   deletion before release. Create genuine app screenshots using the release
+   build; Play Store listing text, artwork requirements, data-safety notes,
+   and release checklist are in [PLAY-STORE.md](./PLAY-STORE.md).
+
+The server allows the Capacitor Android origin `https://localhost` for native
+API calls. Keep the public website's Vercel origin configuration unchanged.
+The app's privacy and deletion resources are available at
+`https://market-predictor-eight.vercel.app/privacy` and
+`https://market-predictor-eight.vercel.app/delete-account`; deploy the Vercel
+site before using these URLs in Play Console. App ID
+`com.ackerie.nexustrade` is the permanent Play Store identifier.
 
 ## Validation Commands
 
@@ -145,7 +221,7 @@ If generated declarations are stale, run `pnpm run typecheck:libs` first. Do not
 
 All route registration starts at `artifacts/api-server/src/routes/index.ts`.
 
-- `auth.ts`: registration, login, logout, sessions, and password reset.
+- `auth.ts`: registration, login, logout, sessions, password changes, and password reset.
 - `account.ts`: user profile and notification preferences.
 - `broker.ts`: Alpaca and OANDA connection management and account summaries.
 - `trades.ts`: authenticated manual order execution.
@@ -167,7 +243,8 @@ All route registration starts at `artifacts/api-server/src/routes/index.ts`.
 - `artifacts/api-server/src/lib/brokerRouting.ts`: instrument-to-broker routing.
 - `artifacts/api-server/src/lib/realAutoTrade.ts`: capped real-order execution and budget guards.
 - `artifacts/api-server/src/lib/dayTradeGuards.ts`: day-trade take-profit and stop-loss guards.
-- `artifacts/api-server/src/lib/aiEnsemble.ts`: Claude, GPT, and Gemini vote combination.
+- `artifacts/api-server/src/lib/aiEnsemble.ts`: shared-key Claude, GPT, and Gemini vote combination and token-usage reporting.
+- `artifacts/api-server/src/lib/aiBudget.ts` and `aiPricing.ts`: customer monthly limits, usage reservations, and estimated shared-provider costs.
 - `artifacts/api-server/src/lib/tradeRisk.ts`: deterministic risk arbiter that can reject AI-approved entries.
 - `artifacts/api-server/src/lib/credentialCrypto.ts`: encryption for stored broker credentials.
 - `artifacts/api-server/src/lib/resendMail.ts`: direct Resend email delivery.
@@ -175,7 +252,7 @@ All route registration starts at `artifacts/api-server/src/routes/index.ts`.
 ### Database
 
 - `lib/db/src/index.ts`: Drizzle database client and connection pool.
-- `lib/db/src/schema/`: PostgreSQL table definitions, including per-user auto-trade settings, AI usage, idempotent order requests, and distributed cycle leases.
+- `lib/db/src/schema/`: PostgreSQL table definitions, including per-user auto-trade settings, monthly AI budgets and usage, idempotent order requests, and distributed cycle leases.
 - `lib/db/drizzle.config.ts`: Drizzle configuration.
 - `artifacts/api-server/src/lib/autoTradePnl.ts`: realized auto-trade P&L calculations.
 
@@ -204,7 +281,7 @@ Do not edit `lib/api-client-react/src/generated/` or `lib/api-zod/src/generated/
 - `lib/integrations-openai-ai-server/`: OpenAI client and media helpers.
 - `lib/integrations-gemini-ai/`: Gemini client and image helper.
 
-Provider credentials are read from `ANTHROPIC_*`, `OPENAI_*`, and `GEMINI_*` environment variables. Missing ensemble providers are skipped, but buy/sell decisions require the configured quorum.
+Shared provider credentials are read from `ANTHROPIC_*`, `OPENAI_*`, and `GEMINI_*` environment variables. Personal keys saved before shared-provider mode remain encrypted until the customer removes them, but are no longer used; attempts to save new personal keys are rejected. Shared AI requests require a saved customer monthly budget and configured token rates. The budget service reserves estimated cost before calling a provider, then records provider-reported token usage against the customer's UTC calendar-month limit. Cost figures are estimates, not provider invoices, and requests already in flight can finish after a limit is reached.
 
 The trading decision pipeline now gives each model a distinct responsibility: Claude acts as the portfolio strategist, GPT as the quantitative technical analyst, and Gemini as the skeptical risk reviewer. Each response must include signal, confidence, entry quality, risk/reward, stop-loss, take-profit, market regime, and risk flags. The ensemble aggregates those fields, then `tradeRisk.ts` applies deterministic minimums before an order can be submitted. The risk arbiter is the final authority; model consensus cannot bypass it.
 
@@ -225,7 +302,7 @@ The auto-trade cycle now requests broker-native bars through `BrokerAdapter.getM
 - **Database connection fails:** verify PostgreSQL is running and `DATABASE_URL` points to the correct database.
 - **Login or registration returns HTTP 500:** this is usually a database connection failure, not an invalid app password. Replace `YOUR_REAL_POSTGRES_PASSWORD` in `artifacts/api-server/.env` with the password configured for the local PostgreSQL `postgres` role, then restart the API. The database must contain the schema from `pnpm --filter @workspace/db run push`.
 - **Vercel login returns “Authentication failed”:** check Railway runtime logs for `Origin is not allowed`. Configure `APP_URL` as the production frontend origin; preview origins for this Vercel project are also accepted by the API.
-- **AI calls fail:** check the provider-native environment variable names and API keys.
+- **AI calls fail:** check all three shared provider keys and the six `AI_*_USD_PER_MILLION` rates on the API service, then confirm the customer saved a monthly limit in Account → Profile. Update the rate variables if model versions or provider pricing changes.
 - **Password reset does not send:** verify `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `APP_URL`, and the sender domain.
 - **Stored broker credentials cannot decrypt:** restore the original `SESSION_SECRET` or reconnect the brokers.
 - **Generated imports fail:** run API codegen, then `pnpm run typecheck:libs`.

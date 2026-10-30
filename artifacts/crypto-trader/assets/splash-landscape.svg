@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="70" x2="1800" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#132942"/>
+      <stop offset="1" stop-color="#07111F"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="445" y1="690" x2="910" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10D7D1"/>
+      <stop offset="1" stop-color="#8AF2C0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 600 -600 0 690 540)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0CB5C2" stop-opacity=".17"/>
+      <stop offset="1" stop-color="#0CB5C2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#glow)"/>
+  <g stroke="#A8D8E0" stroke-opacity=".06" stroke-width="2">
+    <path d="M0 180h1920M0 300h1920M0 420h1920M0 540h1920M0 660h1920M0 780h1920M0 900h1920"/>
+    <path d="M180 0v1080M300 0v1080M420 0v1080M540 0v1080M660 0v1080M780 0v1080M900 0v1080M1020 0v1080M1140 0v1080M1260 0v1080M1380 0v1080M1500 0v1080M1620 0v1080M1740 0v1080"/>
+  </g>
+  <circle cx="690" cy="540" r="365" fill="#0B1725" fill-opacity=".72" stroke="#8CE8DD" stroke-opacity=".13" stroke-width="3"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="url(#cyan)" stroke-width="26">
+      <path d="M425 678V545m0-60v-76"/>
+      <rect x="377" y="469" width="96" height="139" rx="26" fill="#11CFCB" stroke-width="10"/>
+      <path d="M580 605V441m0-58v-79"/>
+      <rect x="532" y="361" width="96" height="172" rx="26" fill="#20DDD0" stroke-width="10"/>
+      <path d="M735 490V323m0-58v-82"/>
+      <rect x="687" y="264" width="96" height="158" rx="26" fill="#42E8C9" stroke-width="10"/>
+      <path d="M890 377V243m0-55v-48"/>
+      <rect x="842" y="194" width="96" height="136" rx="26" fill="#7AF0C1" stroke-width="10"/>
+    </g>
+    <path d="m408 434 172-118 155-80 169-79" fill="none" stroke="#F0FFFC" stroke-width="26"/>
+    <path d="m862 157 82 5-33 74" fill="none" stroke="#F0FFFC" stroke-width="26"/>
+  </g>
+  <text x="1290" y="510" fill="#F4FBFF" font-family="Arial, sans-serif" font-size="102" font-weight="700" letter-spacing="3">NexusTrade</text>
+  <text x="1295" y="585" fill="#9CB6C7" font-family="Arial, sans-serif" font-size="27" letter-spacing="4">MARKET INTELLIGENCE. YOUR TRADING TOOLS.</text>
+</svg>
