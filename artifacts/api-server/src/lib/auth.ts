@@ -4,6 +4,7 @@ import { type Request, type Response } from "express";
 import {
   adminAuditLogsTable,
   db,
+  ensureDatabaseSchema,
   sessionsTable,
   usersTable,
 } from "@workspace/db";
@@ -165,37 +166,50 @@ export async function ensureBootstrapAdmin(): Promise<boolean> {
     return false;
   }
 
-  const [existingUser] = await db
-    .select({
-      id: usersTable.id,
-      email: usersTable.email,
-      isAdmin: usersTable.isAdmin,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.email, email));
+  try {
+    const [existingUser] = await db
+      .select({
+        id: usersTable.id,
+        email: usersTable.email,
+        isAdmin: usersTable.isAdmin,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.email, email));
 
-  if (existingUser) {
-    if (!existingUser.isAdmin) {
-      await db
-        .update(usersTable)
-        .set({ isAdmin: true })
-        .where(eq(usersTable.id, existingUser.id));
+    if (existingUser) {
+      if (!existingUser.isAdmin) {
+        await db
+          .update(usersTable)
+          .set({ isAdmin: true })
+          .where(eq(usersTable.id, existingUser.id));
+      }
+      return true;
     }
-    return true;
+
+    const [created] = await db
+      .insert(usersTable)
+      .values({
+        email,
+        passwordHash: await hashPassword(password),
+        firstName: "Admin",
+        lastName: "Operator",
+        isAdmin: true,
+      })
+      .returning({ id: usersTable.id, isAdmin: usersTable.isAdmin });
+
+    return Boolean(created?.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      /column .* does not exist|relation .* does not exist/i.test(message) ||
+      /missing column|undefined column/i.test(message)
+    ) {
+      await ensureDatabaseSchema();
+      return ensureBootstrapAdmin();
+    }
+
+    throw error;
   }
-
-  const [created] = await db
-    .insert(usersTable)
-    .values({
-      email,
-      passwordHash: await hashPassword(password),
-      firstName: "Admin",
-      lastName: "Operator",
-      isAdmin: true,
-    })
-    .returning({ id: usersTable.id, isAdmin: usersTable.isAdmin });
-
-  return Boolean(created?.id);
 }
 
 export async function ensureAppAccessSettings() {

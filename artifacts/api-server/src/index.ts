@@ -1,4 +1,5 @@
 import app from "./app";
+import { ensureDatabaseSchema } from "@workspace/db";
 import { ensureBootstrapAdmin } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { migrateLegacyCredentials } from "./lib/credentialMigration";
@@ -17,6 +18,7 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+await ensureDatabaseSchema();
 await migrateLegacyCredentials();
 await ensureBootstrapAdmin();
 
