@@ -67,10 +67,10 @@ export async function ensureDatabaseSchema(): Promise<void> {
       );`,
       `CREATE TABLE IF NOT EXISTS "app_access_settings" (
         "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        "paid_access_enabled" boolean NOT NULL DEFAULT true,
-        "ai_access_restricted" boolean NOT NULL DEFAULT true,
-        "auto_trade_restricted" boolean NOT NULL DEFAULT true,
-        "day_trade_restricted" boolean NOT NULL DEFAULT true,
+        "paid_access_enabled" boolean NOT NULL DEFAULT false,
+        "ai_access_restricted" boolean NOT NULL DEFAULT false,
+        "auto_trade_restricted" boolean NOT NULL DEFAULT false,
+        "day_trade_restricted" boolean NOT NULL DEFAULT false,
         "subscription_monthly_price_usd" numeric NOT NULL DEFAULT '0',
         "updated_at" timestamp with time zone NOT NULL DEFAULT now()
       );`,

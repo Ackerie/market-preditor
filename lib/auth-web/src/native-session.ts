@@ -64,7 +64,7 @@ export async function apiFetch(
     headers.set("authorization", `Bearer ${token}`);
   }
 
-const requestInit: RequestInit = {
+  const requestInit: RequestInit = {
     ...(request
       ? {
           method: request.method,

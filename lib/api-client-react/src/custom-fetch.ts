@@ -383,7 +383,7 @@ export async function customFetch<T = unknown>(
     }
   }
 
-if (
+  if (
     ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
     !headers.has("x-csrf-token")
   ) {
