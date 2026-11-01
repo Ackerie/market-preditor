@@ -9,9 +9,7 @@ import { Label } from "@/components/ui/label";
 export default function Login() {
   const { isAuthenticated, isLoading, login, register } = useAuth();
   const [, navigate] = useLocation();
-  const adminOnlyMode =
-    import.meta.env.VITE_ADMIN_LOGIN_ONLY === "true" ||
-    Boolean(import.meta.env.VITE_ADMIN_EMAIL);
+  const adminOnlyMode = false;
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,7 +33,7 @@ export default function Login() {
     event.preventDefault();
     setError(null);
     setResetMessage(null);
-    if (adminOnlyMode && isRegistering) {
+    if (isRegistering && adminOnlyMode) {
       setError(
         "This deployment is restricted to the configured administrator account.",
       );

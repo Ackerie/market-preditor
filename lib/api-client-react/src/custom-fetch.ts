@@ -34,7 +34,7 @@ export function setBaseUrl(url: string | null): void {
 /**
  * Register a getter that supplies a bearer auth token.  Before every fetch
  * the getter is invoked; when it returns a non-null string, an
- * `Authorization: Bearer <token>` header is attached to the request.
+ * ``Authorization: Bearer <token>` header is attached to the request.
  *
  * Useful for Expo bundles making token-gated API calls.
  * Pass `null` to clear the getter.
@@ -383,7 +383,7 @@ export async function customFetch<T = unknown>(
     }
   }
 
-  if (
+if (
     ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
     !headers.has("x-csrf-token")
   ) {

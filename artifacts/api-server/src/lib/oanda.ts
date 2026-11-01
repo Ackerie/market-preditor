@@ -18,7 +18,7 @@ export async function oanda(
       method: init?.method ?? "GET",
       headers: {
         Authorization: `Bearer ${conn.apiToken}`,
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+...(init?.body ? { "Content-Type": "application/json" } : {}),
       },
       body: init?.body ? JSON.stringify(init.body) : undefined,
       signal: AbortSignal.timeout(15000),

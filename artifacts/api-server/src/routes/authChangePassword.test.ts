@@ -150,7 +150,7 @@ describe("POST /api/auth/login", () => {
     });
   });
 
-  it("rejects non-admin accounts when admin mode is enabled", async () => {
+  it("allows normal user logins even when an admin account exists", async () => {
     vi.mocked(authModule.ensureBootstrapAdmin).mockResolvedValue(true);
     vi.mocked(authModule.anyAdminUserExists).mockResolvedValue(true);
     mocks.whereSelect.mockResolvedValue([
@@ -161,14 +161,18 @@ describe("POST /api/auth/login", () => {
         isAdmin: false,
       },
     ]);
+    mocks.verifyPassword.mockResolvedValue(true);
 
     const response = await request(app).post("/api/auth/login").send({
       email: "someone-else@example.com",
       password: "not-the-admin-password",
     });
 
-    expect(response.status).toBe(401);
-    expect(response.body.error).toContain("Admin access only");
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({
+      email: "someone-else@example.com",
+      isAdmin: false,
+    });
   });
 });
 

@@ -97,9 +97,7 @@ export function useAuth(): AuthState {
           try {
             await apiFetch("/api/auth/logout", {
               method: "POST",
-              headers: {
-                authorization: `Bearer ${data.sessionToken}`,
-              },
+              credentials: "include",
             });
           } catch (logoutError) {
             console.error(
@@ -143,10 +141,23 @@ export function useAuth(): AuthState {
   const logout = useCallback(() => {
     void (async () => {
       try {
-        await apiFetch("/api/auth/logout", {
+        const csrfToken = document.cookie
+          .split(";")
+          .map((part) => part.trim())
+          .find((part) => part.startsWith("XSRF-TOKEN="))
+          ?.slice("XSRF-TOKEN=".length);
+
+        const response = await apiFetch("/api/auth/logout", {
           method: "POST",
           credentials: "include",
+          headers: csrfToken
+            ? { "x-csrf-token": decodeURIComponent(csrfToken) }
+            : undefined,
         });
+
+        if (!response.ok) {
+          throw new Error(`Logout failed with status ${response.status}`);
+        }
       } catch (error) {
         console.error("Unable to invalidate the server session.", error);
       }
@@ -157,7 +168,10 @@ export function useAuth(): AuthState {
         console.error("Unable to clear the native session.", error);
       }
 
-      window.location.href = "/login";
+      document.cookie = "sid=; Path=/; Max-Age=0; SameSite=Strict";
+      document.cookie = "XSRF-TOKEN=; Path=/; Max-Age=0; SameSite=Strict";
+      setUser(null);
+      window.location.replace("/login");
     })();
   }, []);
 

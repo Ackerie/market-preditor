@@ -392,9 +392,27 @@ export async function deleteSession(sid: string): Promise<void> {
   await db.delete(sessionsTable).where(eq(sessionsTable.sid, sid));
 }
 
-export async function clearSession(res: Response, sid?: string): Promise<void> {
+export async function clearSession(
+  res: Response,
+  sid?: string,
+  req?: Request,
+): Promise<void> {
   if (sid) await deleteSession(sid);
-  res.clearCookie(SESSION_COOKIE, { path: "/" });
+
+  const forwardedProto = req?.headers["x-forwarded-proto"];
+  const protocol =
+    typeof forwardedProto === "string"
+      ? forwardedProto.split(",")[0]?.trim()
+      : req?.secure
+        ? "https"
+        : "http";
+
+  res.clearCookie(SESSION_COOKIE, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "strict",
+    secure: protocol === "https" || process.env.NODE_ENV === "production",
+  });
 }
 
 export function getSessionId(req: Request): string | undefined {

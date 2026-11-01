@@ -28,7 +28,7 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+"Content-Type": "application/json",
       },
       body: JSON.stringify({
         from,

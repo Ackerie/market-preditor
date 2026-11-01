@@ -10,7 +10,6 @@ import {
 import crypto from "node:crypto";
 import { sendEmail } from "../lib/resendMail";
 import {
-  anyAdminUserExists,
   clearSession,
   createSession,
   ensureBootstrapAdmin,
@@ -119,14 +118,6 @@ router.get("/auth/user", (req: Request, res: Response) => {
 router.post("/auth/register", async (req: Request, res: Response) => {
   await ensureBootstrapAdmin();
 
-  if (await anyAdminUserExists()) {
-    res.status(403).json({
-      error:
-        "This deployment is locked to a single administrator account. Sign in with the admin credentials instead.",
-    });
-    return;
-  }
-
   const credentials = getCredentials(req.body);
   if (!credentials || credentials.password.length < 8) {
     res.status(400).json({
@@ -192,14 +183,6 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     .from(usersTable)
     .where(eq(usersTable.email, credentials.email));
 
-  const adminOnly = await anyAdminUserExists();
-  if (adminOnly && (!user || !user.isAdmin)) {
-    res.status(401).json({
-      error: "Admin access only. Use the configured administrator account.",
-    });
-    return;
-  }
-
   const valid = user?.passwordHash
     ? await verifyPassword(credentials.password, user.passwordHash)
     : false;
@@ -210,7 +193,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
   }
 
   const adminSecret = getAdminTwoFactorSecret();
-  if ((user.isAdmin || adminOnly) && adminSecret) {
+  if (user.isAdmin && adminSecret) {
     if (!credentials.totpCode || !verifyTotp(adminSecret, credentials.totpCode)) {
       res.status(401).json({ error: "Valid 2FA code is required for admin login." });
       return;
@@ -251,7 +234,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
 });
 
 router.post("/auth/logout", async (req: Request, res: Response) => {
-  await clearSession(res, getSessionId(req));
+  await clearSession(res, getSessionId(req), req);
   res.json({ success: true });
 });
 
