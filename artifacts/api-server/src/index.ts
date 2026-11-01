@@ -1,4 +1,5 @@
 import app from "./app";
+import { ensureBootstrapAdmin } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { migrateLegacyCredentials } from "./lib/credentialMigration";
 
@@ -17,6 +18,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 await migrateLegacyCredentials();
+await ensureBootstrapAdmin();
 
 app.listen(port, (err) => {
   if (err) {

@@ -1,4 +1,4 @@
-import { Router, type IRouter, Response } from "express";
+import { Router, type IRouter, type Request, Response } from "express";
 import {
   db,
   autoTradeSettingsTable,
@@ -63,6 +63,7 @@ import {
   formatTechnicalAnalysis,
 } from "../lib/technicalAnalysis";
 import { eq, desc, and, gte } from "drizzle-orm";
+import { ensureAppAccessSettings, isFeatureAccessAllowed } from "../lib/auth";
 
 const router: IRouter = Router();
 
@@ -70,6 +71,21 @@ const router: IRouter = Router();
 // Each strategy has its own lock so the day-trade bot runs fully independently
 // of the long-term bot — one can never block or starve the other.
 const cycleRunning = new Set<string>();
+
+async function requireAutoTradeAccess(req: Request, res: Response): Promise<boolean> {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  if (!(await isFeatureAccessAllowed(req, "autoTrade"))) {
+    res.status(403).json({
+      error: "Auto-trading is currently premium access only.",
+      code: "feature_restricted",
+    });
+    return false;
+  }
+  return true;
+}
 
 async function ensureSettings(userId: string) {
   const existing = await db
@@ -156,8 +172,7 @@ async function getNativeBars(
 }
 
 router.get("/auto-trade/settings", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   try {
@@ -168,8 +183,7 @@ router.get("/auto-trade/settings", async (req, res) => {
 });
 
 router.put("/auto-trade/settings", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   const parsed = UpdateAutoTradeSettingsBody.safeParse(req.body);
@@ -241,8 +255,7 @@ router.put("/auto-trade/settings", async (req, res) => {
 });
 
 router.get("/auto-trade/stats", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   try {
@@ -696,9 +709,8 @@ Respond ONLY with valid JSON (no markdown):
   return { tradesExecuted, entriesEvaluated: logEntries.length };
 }
 
-router.get("/auto-trade/run-status", (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+router.get("/auto-trade/run-status", async (req, res) => {
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   res.json({
@@ -712,8 +724,7 @@ router.get("/auto-trade/run-status", (req, res) => {
 
 // SSE streaming run
 router.get("/auto-trade/run-stream", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Unauthorized" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   const strategy: BotStrategy =
@@ -771,8 +782,7 @@ router.get("/auto-trade/run-stream", async (req, res) => {
 });
 
 router.post("/auto-trade/run", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Unauthorized" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   const strategy: BotStrategy =
@@ -815,8 +825,7 @@ router.post("/auto-trade/run", async (req, res) => {
 });
 
 router.get("/auto-trade/log", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   try {
@@ -847,8 +856,7 @@ router.get("/auto-trade/log", async (req, res) => {
 });
 
 router.get("/auto-trade/events", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   try {
@@ -879,8 +887,7 @@ router.get("/auto-trade/events", async (req, res) => {
 });
 
 router.get("/auto-trade/pnl", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   try {
@@ -915,8 +922,7 @@ router.get("/auto-trade/pnl", async (req, res) => {
 // Prefer broker-native bars for the market chart; simulated data is explicitly
 // identified when no connected provider can supply a usable series.
 router.get("/auto-trade/candles/:symbol", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   const asset = getCoinBySymbol(req.params.symbol);
@@ -959,8 +965,7 @@ router.get("/auto-trade/candles/:symbol", async (req, res) => {
 });
 
 router.get("/auto-trade/alerts", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (!(await requireAutoTradeAccess(req, res))) {
     return;
   }
   try {
@@ -1057,6 +1062,7 @@ export function startAutoTradeScheduler() {
   schedulerTimer = setInterval(async () => {
     try {
       const cycles: Promise<void>[] = [];
+      const accessSettings = await ensureAppAccessSettings();
       const rows = await db.select().from(autoTradeSettingsTable);
 
       for (const settings of rows) {
@@ -1064,7 +1070,11 @@ export function startAutoTradeScheduler() {
         if (!userId) continue;
 
         const dayKey = `${userId}:daytrade`;
-        if (settings.dayTradeEnabled && !cycleRunning.has(dayKey)) {
+        if (
+          settings.dayTradeEnabled &&
+          !(accessSettings.paidAccessEnabled && accessSettings.dayTradeRestricted) &&
+          !cycleRunning.has(dayKey)
+        ) {
           const lastDayRun = settings.dayTradeLastRunAt?.getTime() ?? 0;
           const cadenceMs = isUsMarketOpen()
             ? 0
@@ -1094,7 +1104,11 @@ export function startAutoTradeScheduler() {
         }
 
         const longtermKey = `${userId}:longterm`;
-        if (settings.enabled && !cycleRunning.has(longtermKey)) {
+        if (
+          settings.enabled &&
+          !(accessSettings.paidAccessEnabled && accessSettings.autoTradeRestricted) &&
+          !cycleRunning.has(longtermKey)
+        ) {
           const runMode = settings.runMode ?? "interval";
           const lastRun = settings.lastRunAt?.getTime() ?? 0;
           let shouldRun = false;

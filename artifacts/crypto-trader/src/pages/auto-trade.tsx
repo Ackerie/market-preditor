@@ -574,6 +574,27 @@ function RunProgress({
 export default function AutoTrade() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [featureAccess, setFeatureAccess] = useState<{ autoTrade: boolean }>({ autoTrade: true });
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/app-access", { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { featureAccess?: { autoTrade?: boolean } };
+        if (!active) return;
+        setFeatureAccess({ autoTrade: data.featureAccess?.autoTrade ?? true });
+      })
+      .catch(() => {
+        if (active) setFeatureAccess({ autoTrade: true });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const autoTradeEnabled = featureAccess.autoTrade !== false;
 
   const { data: settings, isLoading: isSettingsLoading } =
     useGetAutoTradeSettings();
@@ -1081,6 +1102,32 @@ export default function AutoTrade() {
   const availableSymbols = assetClasses.flatMap(
     (cls) => ASSET_CLASS_META[cls].assets,
   );
+
+  if (!autoTradeEnabled) {
+    return (
+      <div className="space-y-6 pb-20">
+        <AutoTradeAlertBanner />
+        <Card className="border-amber-400/40 bg-amber-500/10">
+          <CardContent className="p-6 sm:p-8">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-amber-500/15 p-3 text-amber-300">
+                <Bot className="w-6 h-6" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">
+                  Premium access required
+                </p>
+                <h2 className="text-2xl font-bold">Auto-trading is part of the paid plan.</h2>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  The operator has temporarily restricted automated trading. Once premium access is enabled, the AI auto-trader and related automation controls will become available again.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20">

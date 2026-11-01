@@ -21,6 +21,7 @@ import AutoTrade from "@/pages/auto-trade";
 import DayTrade from "@/pages/day-trade";
 import MarketOverview from "@/pages/market-overview";
 import Account from "@/pages/account";
+import AdminPage from "@/pages/admin";
 import Login from "@/pages/login";
 import ResetPassword from "@/pages/reset-password";
 import Terms from "@/pages/terms";
@@ -179,6 +180,7 @@ function Router() {
               <Route path="/day-trade" component={DayTrade} />
               <Route path="/watchlist" component={Watchlist} />
               <Route path="/account" component={Account} />
+              <Route path="/admin" component={AdminPage} />
               <Route component={NotFound} />
             </Switch>
           </Layout>

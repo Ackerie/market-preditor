@@ -1,15 +1,15 @@
 import { type Request, type Response, type NextFunction } from "express";
-import type { AuthUser } from "@workspace/api-zod";
 import {
   clearSession,
   getSessionId,
   getSession,
   type SessionData,
+  type SessionUser,
 } from "../lib/auth";
 
 declare global {
   namespace Express {
-    interface User extends AuthUser {}
+    interface User extends SessionUser {}
 
     interface Request {
       isAuthenticated(): this is AuthedRequest;

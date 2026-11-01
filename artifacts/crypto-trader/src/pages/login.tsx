@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 export default function Login() {
   const { isAuthenticated, isLoading, login, register } = useAuth();
   const [, navigate] = useLocation();
+  const adminOnlyMode =
+    import.meta.env.VITE_ADMIN_LOGIN_ONLY === "true" ||
+    Boolean(import.meta.env.VITE_ADMIN_EMAIL);
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,6 +35,12 @@ export default function Login() {
     event.preventDefault();
     setError(null);
     setResetMessage(null);
+    if (adminOnlyMode && isRegistering) {
+      setError(
+        "This deployment is restricted to the configured administrator account.",
+      );
+      return;
+    }
     if (isRegistering && !hasAcceptedTerms) {
       setError(
         "Please agree to the Terms and Conditions to create an account.",
@@ -171,6 +180,11 @@ export default function Login() {
                   ? "Create a secure NexusTrade account to manage your trading terminal."
                   : "Sign in to access your trading account and portfolio."}
             </p>
+            {adminOnlyMode && (
+              <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
+                Admin-only access is enabled for this deployment.
+              </div>
+            )}
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>

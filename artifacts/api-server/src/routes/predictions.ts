@@ -20,6 +20,7 @@ import {
   analyzeCandles,
   formatTechnicalAnalysis,
 } from "../lib/technicalAnalysis";
+import { isFeatureAccessAllowed } from "../lib/auth";
 
 const router = Router();
 
@@ -28,6 +29,13 @@ router.get("/predictions/:symbol", async (req, res) => {
     res
       .status(401)
       .json({ error: "Authentication is required for AI predictions" });
+    return;
+  }
+  if (!(await isFeatureAccessAllowed(req, "ai"))) {
+    res.status(403).json({
+      error: "AI predictions are currently premium access only.",
+      code: "feature_restricted",
+    });
     return;
   }
   const symbol = req.params.symbol.toUpperCase();

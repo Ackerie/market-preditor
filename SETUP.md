@@ -120,6 +120,12 @@ AI_GEMINI_OUTPUT_USD_PER_MILLION=your-current-rate
 
 SESSION_SECRET=any-long-random-string-you-make-up
 
+# Optional but recommended for single-operator deployments:
+# ADMIN_EMAIL=you@example.com
+# ADMIN_PASSWORD=very-strong-admin-password
+# VITE_ADMIN_LOGIN_ONLY=true
+# VITE_ADMIN_EMAIL=you@example.com
+
 # Optional
 # ALERT_FROM_EMAIL="NexusTrade Alerts <alerts@yourdomain.com>"  # verified Resend sender for auto-trade email alerts
 # LOG_LEVEL=debug
@@ -133,6 +139,8 @@ SESSION_SECRET=any-long-random-string-you-make-up
 
 > **Authentication**: users register and sign in with their own email and password, including a required password confirmation during signup. Passwords are stored as salted `scrypt` hashes in the PostgreSQL `users.password_hash` column; the browser receives only an HTTP-only session cookie. The login screen includes a forgot-password flow that sends a one-hour reset link through Resend.
 
+> **Single-admin mode**: set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the API server environment as a bootstrap for the first administrator account. The API creates or promotes the matching user to `is_admin = true` in PostgreSQL and permanently locks registration to that single admin account. The app checks admin access on the backend using the database-backed role, not the frontend, so normal users cannot bypass the restriction.
+
 > **Email alerts and password reset**: email delivery uses Resend's HTTPS API. Set `RESEND_API_KEY`, `ALERT_FROM_EMAIL` to a verified sender, and `APP_URL` to the frontend's public URL so password reset links open the correct site. The reset endpoint still returns a generic response so it does not reveal whether an email exists.
 
 > **Trading bot safety**: the bot uses three shared role-based AI analysts plus a deterministic risk arbiter. It requests broker-native bars for connected opted-in accounts and blocks new entries when it must fall back to simulated data. Use Alpaca paper mode or OANDA practice mode while developing trading changes.
@@ -142,9 +150,11 @@ SESSION_SECRET=any-long-random-string-you-make-up
 ```bash
 PORT=5173
 BASE_PATH=/
+VITE_ADMIN_LOGIN_ONLY=true
+VITE_ADMIN_EMAIL=you@example.com
 ```
 
-If you do not define these values, Vite will fall back to `PORT=5173` and `BASE_PATH=/` for local development/builds.
+If you do not define these values, Vite will fall back to `PORT=5173` and `BASE_PATH=/` for local development/builds. When `VITE_ADMIN_LOGIN_ONLY` is set, the UI shows that this is administrator-only access and hides the registration flow.
 
 > **Important**: Never commit `.env` files to Git. They are already in `.gitignore`.
 

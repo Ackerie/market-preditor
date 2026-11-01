@@ -13,6 +13,7 @@ import {
   BarChart2,
   Radio,
   User,
+  Shield,
   LogOut,
   Menu,
   X,
@@ -36,6 +37,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { name: "Day Trade", href: "/day-trade", icon: TrendingUp },
     { name: "Watchlist", href: "/watchlist", icon: List },
     { name: "Account", href: "/account", icon: User },
+    ...(user?.isAdmin ? [{ name: "Admin", href: "/admin", icon: Shield }] : []),
   ];
 
   const SidebarContent = () => (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { 
   useListCoins, 
   useGetPrediction, 
@@ -42,12 +42,33 @@ const ASSET_CLASS_META: Record<AssetClass, { icon: React.ElementType; label: str
 export default function Predictions() {
   const [assetClass, setAssetClass] = useState<AssetClass>("crypto");
   const [selectedSymbol, setSelectedSymbol] = useState<string>("BTC");
+  const [featureAccess, setFeatureAccess] = useState<{ ai: boolean }>({ ai: true });
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/app-access", { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { featureAccess?: { ai?: boolean } };
+        if (!active) return;
+        setFeatureAccess({ ai: data.featureAccess?.ai ?? true });
+      })
+      .catch(() => {
+        if (active) setFeatureAccess({ ai: true });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const aiEnabled = featureAccess.ai !== false;
 
   const { data: coins, isLoading: coinsLoading } = useListCoins({ assetType: assetClass });
 
   const { data: prediction, isLoading: predictionLoading } = useGetPrediction(selectedSymbol!, {
     query: {
-      enabled: !!selectedSymbol,
+      enabled: !!selectedSymbol && aiEnabled,
       queryKey: getGetPredictionQueryKey(selectedSymbol!),
     },
   });
@@ -70,6 +91,35 @@ export default function Predictions() {
 
   const meta = ASSET_CLASS_META[assetClass];
   const Icon = meta.icon;
+
+  if (!aiEnabled) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">AI Predictions</h1>
+        </div>
+
+        <Card className="border-amber-400/40 bg-amber-500/10">
+          <CardContent className="p-6 sm:p-8">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-amber-500/15 p-3 text-amber-300">
+                <BrainCircuit className="w-6 h-6" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">
+                  Premium access required
+                </p>
+                <h2 className="text-2xl font-bold">AI predictions are part of the paid plan.</h2>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  This feature is currently locked by the operator. Unlock AI predictions from the admin controls to resume market insights and trade signals.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

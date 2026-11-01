@@ -10,16 +10,24 @@ import {
 import crypto from "node:crypto";
 import { sendEmail } from "../lib/resendMail";
 import {
+  anyAdminUserExists,
   clearSession,
   createSession,
+  ensureBootstrapAdmin,
+  getAdminCredentials,
+  getAdminTwoFactorSecret,
   getSession,
   getSessionId,
   hashPassword,
+  isAdminCredentials,
+  isAdminIpAllowed,
+  recordAdminAudit,
   SESSION_COOKIE,
   SESSION_TTL,
   STEP_UP_TTL,
   updateSession,
   verifyPassword,
+  verifyTotp,
 } from "../lib/auth";
 import { isNativeAppOrigin } from "../lib/appOrigins";
 
@@ -55,6 +63,8 @@ function getCredentials(body: unknown) {
   const email =
     typeof value.email === "string" ? value.email.trim().toLowerCase() : "";
   const password = typeof value.password === "string" ? value.password : "";
+  const totpCode =
+    typeof value.totpCode === "string" ? value.totpCode.trim() : "";
   const confirmPassword =
     typeof value.confirmPassword === "string" ? value.confirmPassword : "";
   const firstName =
@@ -63,21 +73,31 @@ function getCredentials(body: unknown) {
     typeof value.lastName === "string" ? value.lastName.trim() : "";
 
   if (!email || !password) return null;
-  return { email, password, confirmPassword, firstName, lastName };
+  return { email, password, totpCode, confirmPassword, firstName, lastName };
 }
 
 async function startSession(
   req: Request,
   res: Response,
-  user: typeof usersTable.$inferSelect,
+  user: typeof usersTable.$inferSelect & { isAdmin?: boolean },
 ): Promise<string> {
+  const sessionUser = user as typeof user & {
+    isAdmin?: boolean;
+    paidAccessEnabled?: boolean;
+    subscriptionExpiresAt?: string | Date | null;
+  };
   const sid = await createSession({
     user: {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      profileImageUrl: user.profileImageUrl,
+      id: sessionUser.id,
+      email: sessionUser.email,
+      firstName: sessionUser.firstName,
+      lastName: sessionUser.lastName,
+      profileImageUrl: sessionUser.profileImageUrl,
+      isAdmin: Boolean(sessionUser.isAdmin),
+      paidAccessEnabled: Boolean((sessionUser as any).paidAccessEnabled),
+      subscriptionExpiresAt: sessionUser.subscriptionExpiresAt
+        ? new Date(sessionUser.subscriptionExpiresAt).toISOString()
+        : null,
     },
     expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL / 1000,
     reauthenticated_at: Date.now(),
@@ -97,6 +117,16 @@ router.get("/auth/user", (req: Request, res: Response) => {
 });
 
 router.post("/auth/register", async (req: Request, res: Response) => {
+  await ensureBootstrapAdmin();
+
+  if (await anyAdminUserExists()) {
+    res.status(403).json({
+      error:
+        "This deployment is locked to a single administrator account. Sign in with the admin credentials instead.",
+    });
+    return;
+  }
+
   const credentials = getCredentials(req.body);
   if (!credentials || credentials.password.length < 8) {
     res.status(400).json({
@@ -138,12 +168,19 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       firstName: user.firstName,
       lastName: user.lastName,
       profileImageUrl: user.profileImageUrl,
+      isAdmin: Boolean(user.isAdmin),
+      paidAccessEnabled: Boolean((user as any).paidAccessEnabled),
+      subscriptionExpiresAt: (user as any).subscriptionExpiresAt
+        ? new Date((user as any).subscriptionExpiresAt).toISOString()
+        : null,
     },
     ...(isNativeAppOrigin(req.get("origin")) ? { sessionToken } : {}),
   });
 });
 
 router.post("/auth/login", async (req: Request, res: Response) => {
+  await ensureBootstrapAdmin();
+
   const credentials = getCredentials(req.body);
   if (!credentials) {
     res.status(400).json({ error: "Email and password are required" });
@@ -154,6 +191,15 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     .select()
     .from(usersTable)
     .where(eq(usersTable.email, credentials.email));
+
+  const adminOnly = await anyAdminUserExists();
+  if (adminOnly && (!user || !user.isAdmin)) {
+    res.status(401).json({
+      error: "Admin access only. Use the configured administrator account.",
+    });
+    return;
+  }
+
   const valid = user?.passwordHash
     ? await verifyPassword(credentials.password, user.passwordHash)
     : false;
@@ -163,7 +209,30 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     return;
   }
 
+  const adminSecret = getAdminTwoFactorSecret();
+  if ((user.isAdmin || adminOnly) && adminSecret) {
+    if (!credentials.totpCode || !verifyTotp(adminSecret, credentials.totpCode)) {
+      res.status(401).json({ error: "Valid 2FA code is required for admin login." });
+      return;
+    }
+  }
+
+  if (user.isAdmin && !isAdminIpAllowed(req)) {
+    await recordAdminAudit(req, user.id, "admin_ip_blocked", {
+      message: "Blocked admin login from disallowed IP",
+      requestIp: req.ip,
+    });
+    res.status(403).json({
+      error: "This admin account is restricted to approved IP addresses.",
+    });
+    return;
+  }
+
   const sessionToken = await startSession(req, res, user);
+  await recordAdminAudit(req, user.id, "admin_login", {
+    email: user.email,
+    isAdmin: Boolean(user.isAdmin),
+  });
   res.json({
     user: {
       id: user.id,
@@ -171,6 +240,11 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       firstName: user.firstName,
       lastName: user.lastName,
       profileImageUrl: user.profileImageUrl,
+      isAdmin: Boolean(user.isAdmin),
+      paidAccessEnabled: Boolean((user as any).paidAccessEnabled),
+      subscriptionExpiresAt: (user as any).subscriptionExpiresAt
+        ? new Date((user as any).subscriptionExpiresAt).toISOString()
+        : null,
     },
     ...(isNativeAppOrigin(req.get("origin")) ? { sessionToken } : {}),
   });
@@ -188,17 +262,27 @@ router.post("/auth/reauthenticate", async (req: Request, res: Response) => {
   }
   const password =
     typeof req.body?.password === "string" ? req.body.password : "";
+
   const [user] = await db
-    .select()
+    .select({
+      id: usersTable.id,
+      passwordHash: usersTable.passwordHash,
+      isAdmin: usersTable.isAdmin,
+      paidAccessEnabled: (usersTable as any).paidAccessEnabled,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, req.user!.id));
-  if (
-    !user?.passwordHash ||
-    !(await verifyPassword(password, user.passwordHash))
-  ) {
+
+  if (!user?.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
     res.status(401).json({ error: "Invalid password" });
     return;
   }
+
+  if (req.user.isAdmin && !user.isAdmin) {
+    res.status(401).json({ error: "Invalid admin password" });
+    return;
+  }
+
   const sid = getSessionId(req);
   if (sid) {
     const session = await getSession(sid);
@@ -212,6 +296,14 @@ router.post("/auth/reauthenticate", async (req: Request, res: Response) => {
 router.post("/auth/change-password", async (req: Request, res: Response) => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  if (req.user.isAdmin) {
+    res.status(403).json({
+      error:
+        "Admin credentials are managed by the server environment and cannot be changed here.",
+    });
     return;
   }
 

@@ -6,12 +6,15 @@ const mocks = vi.hoisted(() => {
   const whereSelect = vi.fn();
   const selectFrom = vi.fn(() => ({ where: whereSelect }));
   const select = vi.fn(() => ({ from: selectFrom }));
+  const insertValues = vi.fn();
+  const insert = vi.fn(() => ({ values: insertValues }));
   const updateWhere = vi.fn();
   const updateSet = vi.fn(() => ({ where: updateWhere }));
   const update = vi.fn(() => ({ set: updateSet }));
   const deleteWhere = vi.fn();
   const remove = vi.fn(() => ({ where: deleteWhere }));
   const transaction = vi.fn();
+  const createSession = vi.fn(() => "mock-session");
   const verifyPassword = vi.fn();
   const hashPassword = vi.fn();
   const eq = vi.fn(() => ({}));
@@ -20,10 +23,13 @@ const mocks = vi.hoisted(() => {
 
   return {
     and,
-    db: { delete: remove, select, transaction, update },
+    db: { delete: remove, insert, select, transaction, update },
+    createSession,
     deleteWhere,
     eq,
     hashPassword,
+    insert,
+    insertValues,
     remove,
     select,
     sql,
@@ -39,7 +45,12 @@ vi.mock("@workspace/db", () => ({
   db: mocks.db,
   passwordResetTokensTable: { userId: "passwordResetTokens.userId" },
   sessionsTable: { sess: "sessions.sess", sid: "sessions.sid" },
-  usersTable: { id: "users.id", passwordHash: "users.passwordHash" },
+  usersTable: {
+    id: "users.id",
+    passwordHash: "users.passwordHash",
+    isAdmin: "users.isAdmin",
+    paidAccessEnabled: "users.paidAccessEnabled",
+  },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -51,16 +62,24 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 vi.mock("../lib/auth", () => ({
+  anyAdminUserExists: vi.fn(() => false),
   clearSession: vi.fn(),
-  createSession: vi.fn(),
+  createSession: mocks.createSession,
+  ensureBootstrapAdmin: vi.fn(() => false),
+  getAdminCredentials: vi.fn(() => null),
+  getAdminTwoFactorSecret: vi.fn(() => null),
   getSession: vi.fn(),
   getSessionId: vi.fn(() => "active-session"),
   hashPassword: mocks.hashPassword,
+  isAdminCredentials: vi.fn(() => false),
+  isAdminIpAllowed: vi.fn(() => true),
+  recordAdminAudit: vi.fn(),
   SESSION_COOKIE: "sid",
   SESSION_TTL: 60_000,
   STEP_UP_TTL: 60_000,
   updateSession: vi.fn(),
   verifyPassword: mocks.verifyPassword,
+  verifyTotp: vi.fn(() => true),
 }));
 
 vi.mock("../lib/resendMail", () => ({ sendEmail: vi.fn() }));
@@ -75,16 +94,25 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
     firstName: null,
     lastName: null,
     profileImageUrl: null,
+    isAdmin: false,
+    paidAccessEnabled: false,
   };
   req.isAuthenticated = (() => true) as Request["isAuthenticated"];
   next();
 });
 
+const authModule = await import("../lib/auth");
 const authRouter = (await import("./auth")).default;
 app.use("/api", authRouter);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.ADMIN_EMAIL;
+  delete process.env.ADMIN_PASSWORD;
+  vi.mocked(authModule.anyAdminUserExists).mockResolvedValue(false);
+  vi.mocked(authModule.ensureBootstrapAdmin).mockResolvedValue(false);
+  vi.mocked(authModule.getAdminCredentials).mockReturnValue(null);
+  vi.mocked(authModule.isAdminCredentials).mockReturnValue(false);
   mocks.whereSelect.mockResolvedValue([{ passwordHash: "current-hash" }]);
   mocks.verifyPassword.mockResolvedValue(true);
   mocks.hashPassword.mockResolvedValue("new-hash");
@@ -94,6 +122,54 @@ beforeEach(() => {
     async (callback: (transaction: typeof mocks.db) => Promise<void>) =>
       callback(mocks.db),
   );
+});
+
+describe("POST /api/auth/login", () => {
+  it("accepts the configured administrator account when admin mode is enabled", async () => {
+    vi.mocked(authModule.ensureBootstrapAdmin).mockResolvedValue(true);
+    vi.mocked(authModule.anyAdminUserExists).mockResolvedValue(true);
+    mocks.whereSelect.mockResolvedValue([
+      {
+        id: "admin-user",
+        email: "owner@example.com",
+        passwordHash: "admin-hash",
+        isAdmin: true,
+      },
+    ]);
+    mocks.verifyPassword.mockResolvedValue(true);
+
+    const response = await request(app).post("/api/auth/login").send({
+      email: "owner@example.com",
+      password: "SuperSecurePassword123!",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({
+      email: "owner@example.com",
+      isAdmin: true,
+    });
+  });
+
+  it("rejects non-admin accounts when admin mode is enabled", async () => {
+    vi.mocked(authModule.ensureBootstrapAdmin).mockResolvedValue(true);
+    vi.mocked(authModule.anyAdminUserExists).mockResolvedValue(true);
+    mocks.whereSelect.mockResolvedValue([
+      {
+        id: "user-2",
+        email: "someone-else@example.com",
+        passwordHash: "user-hash",
+        isAdmin: false,
+      },
+    ]);
+
+    const response = await request(app).post("/api/auth/login").send({
+      email: "someone-else@example.com",
+      password: "not-the-admin-password",
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toContain("Admin access only");
+  });
 });
 
 describe("POST /api/auth/change-password", () => {

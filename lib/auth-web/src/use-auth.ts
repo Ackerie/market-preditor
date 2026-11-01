@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import type { AuthUser } from "@workspace/api-client-react";
 import {
   apiFetch,
   clearNativeSession,
@@ -7,13 +6,20 @@ import {
   saveNativeSession,
 } from "./native-session";
 
-export type { AuthUser };
+export type AuthUser = {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+  isAdmin?: boolean;
+};
 
 interface AuthState {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<string | null>;
+  login: (email: string, password: string, totpCode?: string) => Promise<string | null>;
   register: (
     email: string,
     password: string,

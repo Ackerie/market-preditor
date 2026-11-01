@@ -9,6 +9,7 @@ import marketRouter from "./market";
 import watchlistRouter from "./watchlist";
 import autoTradeRouter, { startAutoTradeScheduler } from "./autoTrade";
 import accountRouter from "./account";
+import adminRouter from "./admin";
 import brokerRouter from "./broker";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.use(marketRouter);
 router.use(watchlistRouter);
 router.use(autoTradeRouter);
 router.use(accountRouter);
+router.use(adminRouter);
 router.use(brokerRouter);
 
 startAutoTradeScheduler();
